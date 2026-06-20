@@ -165,8 +165,8 @@ def fixed_1_5x_growth(capacity: int) -> int:
 # ═══════════════════════════════════════════════════════════════════════
 # 3.  EXPERIMENT RUNNER
 # ═══════════════════════════════════════════════════════════════════════
-ALPHAS = [1.0, 1.5, 2.0, 2.5, 3.0]
-BETAS = [1, 2, 5]
+ALPHAS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
+BETAS = [1, 2, 5, 10]
 WORKLOADS = [10_000, 100_000, 1_000_000]
 
 
@@ -216,7 +216,7 @@ def run_all_experiments() -> list[SimResult]:
 # ═══════════════════════════════════════════════════════════════════════
 # 4.  CSV EXPORT
 # ═══════════════════════════════════════════════════════════════════════
-CSV_FILENAME = "formula_a_results.csv"
+CSV_FILENAME = "formula_a_results_v2.csv"
 
 
 def export_csv(results: list[SimResult]):
@@ -326,8 +326,9 @@ ALPHA_COLORS = {
     2.0: "#FFD43B",   # yellow
     2.5: "#69DB7C",   # green
     3.0: "#4DABF7",   # blue
+    3.5: "#C084FC",   # purple
 }
-BETA_LINESTYLES = {1: "-", 2: "--", 5: ":"}
+BETA_LINESTYLES = {1: "-", 2: "--", 5: ":", 10: "-."}
 
 BASELINE_STYLES = {
     "Fixed 2.0x": {"color": "#E17055", "linewidth": 2.5, "linestyle": "-.", "alpha": 0.9},
@@ -423,7 +424,7 @@ def plot_bar_comparisons(results: list[SimResult]):
                     f"{val:.1f}", ha="center", va="bottom", fontsize=6, color=C_TEXT)
 
         plt.tight_layout(rect=[0, 0, 1, 0.95])
-        fname = f"formula_a_comparison_{n}.png"
+        fname = f"formula_a_comparison_{n}_v2.png"
         plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
         print(f"  Chart saved -> {fname}")
         plt.show()
@@ -464,7 +465,7 @@ def plot_growth_factor_curve():
               loc="upper right", ncol=3)
 
     plt.tight_layout()
-    fname = "formula_a_growth_curve.png"
+    fname = "formula_a_growth_curve_v2.png"
     plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
     print(f"  Chart saved -> {fname}")
     plt.show()
@@ -548,8 +549,8 @@ def print_conclusion(results: list[SimResult]):
 if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("  Formula A: Logarithmic Adaptive Growth — Phase 1 (Constant Alpha)")
-    print("  Parameters: alpha in {1.0, 1.5, 2.0, 2.5, 3.0}")
-    print("              beta  in {1, 2, 5}")
+    print("  Parameters: alpha in {1.0, 1.5, 2.0, 2.5, 3.0, 3.5}")
+    print("              beta  in {1, 2, 5, 10}")
     print("  Baselines : Fixed 2.0x, Fixed 1.5x")
     print("  Workloads : 10K, 100K, 1M insertions")
     print("=" * 70)

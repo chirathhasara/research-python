@@ -1,0 +1,138 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\title{Dynamic Array Scaling: Formula A Progress Report}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Dynamic arrays traditionally use a fixed growth factor (e.g., $2.0\times$ in C++ or $1.5\times$ in Java) upon reallocation. While simple, these fixed strategies often result in significant memory waste at large capacities. The purpose of this research is to evaluate adaptive growth factors that gracefully decay as capacity increases, thus conserving memory, while avoiding an excessive number of array resizes and element copies.
+
+This report summarizes the testing and evaluation of \textbf{Formula A: Logarithmic Adaptive Growth}. The evaluation was split into Phase 1 (Constant $\alpha$) and Phase 2 (Workload-Aware Logarithmic $\alpha$), as documented in our theoretical models (\texttt{new\_formulas.md}).
+
+\section{Phase 1: Constant Alpha Baseline}
+In Phase 1, the scaling factor $\alpha$ is kept constant. The growth factor solely depends on the current capacity $C$:
+\begin{equation}
+g(C) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{\alpha}{\ln(C+\beta)}\right)\right)
+\end{equation}
+
+\subsection{Results Summary (N = 1,000,000)}
+For 1,000,000 insertions, the adaptive formula significantly outperformed fixed growth in terms of memory waste. \texttt{FormulaA(a=3.5, b=10)} provided the best balance of speed and copy cost among the adaptive methods, while \texttt{FormulaA(a=1.5, b=2)} achieved the lowest absolute waste.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Strategy} & \textbf{Resizes} & \textbf{Total Copied} & \textbf{Waste (\%)} \\
+        \midrule
+        Fixed $2.0\times$ & 17 & 1,310,710 & 23.71\% \\
+        Fixed $1.5\times$ & 29 & 2,430,972 & 17.73\% \\
+        FormulaA ($a=3.5, b=10$) & 32 & 3,951,990 & 7.69\% \\
+        FormulaA ($a=1.5, b=2$) & 67 & 8,509,374 & 0.04\% \\
+        \bottomrule
+    \end{tabular}
+    \caption{Key Performance Metrics for Phase 1 at 1,000,000 Insertions.}
+    \label{tab:phase1}
+\end{table}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.9\textwidth]{../form_A_phas_A/formula_a_comparison_1000000_v2.png}
+    \caption{Phase 1: Memory Waste and Copy Cost comparison at $N = 1,000,000$.}
+    \label{fig:phase1_1m}
+\end{figure}
+
+\clearpage
+
+\section{Phase 2: Workload-Aware Logarithmic Alpha}
+In Phase 2, we introduce workload-awareness by adjusting the scaling factor based on the insertion velocity $v = \frac{\Delta N}{\Delta t}$.
+
+Based on early testing, a linear scalar ($\alpha(v) = \alpha_{base} + kv$) clipped to the maximum growth factor ($g_{\max} = 2.0$) too abruptly during high-velocity workloads. Thus, we adopted a \textbf{logarithmic scaling mechanism} for velocity:
+\begin{equation}
+\alpha(v) = 3.0 + k \ln(1 + v)
+\end{equation}
+Yielding the final growth equation:
+\begin{equation}
+g(C, v) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{3.0 + k \ln(1+v)}{\ln(C+5)}\right)\right)
+\end{equation}
+
+\subsection{Results Summary (N = 1,000,000)}
+We subjected the Phase 2 formula to four distinct insertion patterns. The table below highlights the performance of the best configurations under Constant ($v=10$), Accelerating ($1 \to 1000$), and Spiky velocities.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{llrrr}
+        \toprule
+        \textbf{Pattern} & \textbf{Strategy} & \textbf{Resizes} & \textbf{Total Copied} & \textbf{Waste (\%)} \\
+        \midrule
+        \textbf{Constant ($v=10$)} & Fixed $2.0\times$ & 17 & 1,310,710 & 23.71\% \\
+        & Phase 1 Base ($a=3, b=5$) & 36 & 4,291,665 & 1.22\% \\
+        & Phase 2 ($k=1.0$) & 23 & 2,366,269 & 1.06\% \\
+        \midrule
+        \textbf{Accelerating ($1 \to 1000$)} & Fixed $2.0\times$ & 17 & 1,310,710 & 23.71\% \\
+        & Phase 1 Base ($a=3, b=5$) & 36 & 4,291,665 & 1.22\% \\
+        & Phase 2 ($k=2.0$) & 26 & 2,636,049 & 3.79\% \\
+        \midrule
+        \textbf{Spiky} & Phase 1 Base ($a=3, b=5$) & 36 & 4,291,665 & 1.22\% \\
+        & Phase 2 ($k=1.0$) & 21 & 2,572,485 & 12.16\% \\
+        \bottomrule
+    \end{tabular}
+    \caption{Key Performance Metrics for Phase 2 at 1,000,000 Insertions under varying patterns.}
+    \label{tab:phase2}
+\end{table}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.9\textwidth]{../form_A_phase_2/phase2_comparison_1000000.png}
+    \caption{Phase 2: Workload-Aware Scaling mapped across different insertion patterns at $N = 1,000,000$.}
+    \label{fig:phase2_1m}
+\end{figure}
+
+\clearpage
+
+\section{Formula B Phase 1: Standard Harmonic Growth}
+In Formula B, the growth factor is determined by the resize history (the number of resize operations $k$). We generalize the harmonic sequence by introducing a tunable numerator parameter $c$:
+\begin{equation}
+g(k) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{c}{k}\right)\right)
+\end{equation}
+
+\subsection{Results Summary (N = 1,000,000)}
+The harmonic sequence strategy yields extremely tight memory bounds, but the aggressive decay of the growth factor causes an unacceptably high number of element copies compared to Formula A and fixed baselines.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Strategy} & \textbf{Resizes} & \textbf{Total Copied} & \textbf{Waste (\%)} \\
+        \midrule
+        Fixed $2.0\times$ & 17 & 1,310,710 & 23.71\% \\
+        Formula A ($a=3.5, b=10$) & 32 & 3,951,990 & 7.69\% \\
+        Formula B ($c=1.0$) & 106 & 10,020,732 & 0.21\% \\
+        Formula B ($c=3.0$) & 71 & 10,803,264 & 7.90\% \\
+        Formula B ($c=5.0$) & 37 & 6,644,767 & 7.19\% \\
+        \bottomrule
+    \end{tabular}
+    \caption{Key Performance Metrics for Formula B Phase 1 at 1,000,000 Insertions.}
+    \label{tab:form_b_phase1}
+\end{table}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.9\textwidth]{../form_B_phas_1/formula_b_comparison_1000000.png}
+    \caption{Formula B Phase 1: Memory Waste and Copy Cost comparison at $N = 1,000,000$.}
+    \label{fig:form_b_phase1_1m}
+\end{figure}
+
+The pure harmonic growth decays too rapidly for standard workloads. While memory waste is exceptionally low (reaching $0.21\%$ for $c=1.0$), it results in severe resize thrashing ($>10$ million copies). This validates the necessity of integrating workload-awareness into the numerator (Phase 2) to flatten the decay curve during sustained insertions.
+
+\section{Future Work}
+The upcoming stages of this research will evaluate \textbf{Formula B Phase 2 (Workload-Aware Harmonic Growth)}, integrating insertion velocity to stabilize the harmonic decay. This report will be updated continuously as new simulation results are compiled.
+
+\end{document}

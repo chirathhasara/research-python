@@ -112,11 +112,29 @@ Where:
 
 ### Adaptive Alpha
 
+Based on initial testing, the linear velocity formula did not perform well:
+
 \[
 \alpha(v) = \alpha_{base} + kv
 \]
 
-Final formula:
+This approach immediately explodes and gets clipped to \(g_{max} = 2.0\) during high-velocity workloads.
+
+#### Recommended Formula A Phase 2
+
+Instead, keep the best Phase 1 baseline:
+
+\[
+\alpha_{base} = 3.0, \quad \beta = 5
+\]
+
+Then use a logarithmic scaling for velocity:
+
+\[
+\alpha(v) = \alpha_{base} + k\ln(1+v)
+\]
+
+So the full growth formula becomes:
 
 \[
 g(C,v)
@@ -127,12 +145,12 @@ g_{max},
 \max
 \left(
 g_{min},
-1 + \frac{\alpha(v)}{\ln(C+\beta)}
+1 + \frac{3.0 + k\ln(1+v)}{\ln(C+5)}
 \right)
 \right)
 \]
 
-This makes the growth strategy workload-aware.
+This ensures the growth factor scales gracefully with workload spikes without prematurely clipping.
 
 ---
 
