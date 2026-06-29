@@ -69,6 +69,14 @@ class SimResult:
     snapshot_sizes: list = field(default_factory=list)
     snapshot_capacities: list = field(default_factory=list)
     snapshot_wastes: list = field(default_factory=list)
+    peak_memory: int = 0
+    peak_memory_bytes: int = 0
+    avg_memory: float = 0.0
+    peak_waste: int = 0
+    avg_waste: float = 0.0
+    final_memory_footprint: int = 0
+    peak_memory_footprint: int = 0
+    avg_memory_footprint: float = 0.0
 
 
 class DynamicArraySimulator:
@@ -87,18 +95,42 @@ class DynamicArraySimulator:
         self._snap_sizes: list[int] = []
         self._snap_caps: list[int] = []
         self._snap_wastes: list[int] = []
+        
+        self.sum_capacity: int = 0
+        self.sum_waste: int = 0
+        self.peak_waste: int = 0
 
     def run(self, n: int, growth_fn) -> SimResult:
         """Insert n elements using the given growth function."""
         t0 = time.perf_counter()
 
+        last_resize_size = 0
+        current_cap = self.capacity
+        
         for _ in range(n):
             if self.size == self.capacity:
+                # Add to sums before changing capacity
+                count = self.size - last_resize_size
+                self.sum_capacity += count * current_cap
+                # sum of (current_cap - size) for size from last_resize_size+1 to self.size
+                # sum(size) = (self.size * (self.size + 1) // 2) - (last_resize_size * (last_resize_size + 1) // 2)
+                sum_sizes = (self.size * (self.size + 1) // 2) - (last_resize_size * (last_resize_size + 1) // 2)
+                self.sum_waste += (count * current_cap) - sum_sizes
+                
                 new_cap = growth_fn(self.capacity)
                 new_cap = max(new_cap, self.capacity + 1)  # ensure at least +1
+                
+                # Peak waste is largest right after resize
+                waste_after_resize = new_cap - self.size
+                if waste_after_resize > self.peak_waste:
+                    self.peak_waste = waste_after_resize
+                    
                 self.total_copied += self.size
                 self.capacity = new_cap
+                current_cap = new_cap
+                last_resize_size = self.size
                 self.resize_count += 1
+                
             self.size += 1
 
             # Record snapshots at logarithmic intervals to keep memory low
@@ -107,7 +139,17 @@ class DynamicArraySimulator:
                 self._snap_sizes.append(self.size)
                 self._snap_caps.append(self.capacity)
                 self._snap_wastes.append(self.capacity - self.size)
-
+                
+        # Final additions to sums for the last segment
+        count = self.size - last_resize_size
+        if count > 0:
+            self.sum_capacity += count * current_cap
+            sum_sizes = (self.size * (self.size + 1) // 2) - (last_resize_size * (last_resize_size + 1) // 2)
+            self.sum_waste += (count * current_cap) - sum_sizes
+            waste_after_resize = current_cap - last_resize_size
+            if waste_after_resize > self.peak_waste:
+                self.peak_waste = waste_after_resize
+                
         t1 = time.perf_counter()
 
         # Ensure the final state is always captured
@@ -117,6 +159,15 @@ class DynamicArraySimulator:
             self._snap_wastes.append(self.capacity - self.size)
 
         waste_pct = ((self.capacity - self.size) / self.capacity) * 100.0
+        ELEMENT_SIZE = 8
+        peak_memory = self.capacity
+        peak_memory_bytes = peak_memory * ELEMENT_SIZE
+        avg_memory = self.sum_capacity / n if n > 0 else 0
+        avg_waste = self.sum_waste / n if n > 0 else 0
+        
+        final_footprint = self.capacity * ELEMENT_SIZE
+        peak_footprint = peak_memory_bytes
+        avg_footprint = avg_memory * ELEMENT_SIZE
 
         return SimResult(
             strategy_name="",
@@ -132,6 +183,14 @@ class DynamicArraySimulator:
             snapshot_sizes=self._snap_sizes,
             snapshot_capacities=self._snap_caps,
             snapshot_wastes=self._snap_wastes,
+            peak_memory=peak_memory,
+            peak_memory_bytes=peak_memory_bytes,
+            avg_memory=round(avg_memory, 4),
+            peak_waste=self.peak_waste,
+            avg_waste=round(avg_waste, 4),
+            final_memory_footprint=final_footprint,
+            peak_memory_footprint=peak_footprint,
+            avg_memory_footprint=round(avg_footprint, 4),
         )
 
 
@@ -162,12 +221,18 @@ def fixed_1_5x_growth(capacity: int) -> int:
     return capacity + (capacity >> 1)
 
 
+def python_list_growth(capacity: int) -> int:
+    """Python list growth pattern approximation (CPython)."""
+    newsize = capacity + 1
+    return newsize + (newsize >> 3) + (3 if newsize < 9 else 6)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 3.  EXPERIMENT RUNNER
 # ═══════════════════════════════════════════════════════════════════════
 ALPHAS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
 BETAS = [1, 2, 5, 10]
-WORKLOADS = [10_000, 100_000, 1_000_000]
+WORKLOADS = [10_000, 100_000, 1_000_000, 10_000_000, 100_000_000]
 
 
 def run_all_experiments() -> list[SimResult]:
@@ -185,6 +250,7 @@ def run_all_experiments() -> list[SimResult]:
         for name, fn, a, b in [
             ("Fixed 2.0x", fixed_2x_growth, 0.0, 0.0),
             ("Fixed 1.5x", fixed_1_5x_growth, 0.0, 0.0),
+            ("Python List", python_list_growth, 0.0, 0.0),
         ]:
             run_num += 1
             print(f"  [{run_num}/{total_runs}] {name} ...", end="", flush=True)
@@ -228,12 +294,16 @@ def export_csv(results: list[SimResult]):
             "Strategy", "Alpha", "Beta", "Workload",
             "Final_Capacity", "Final_Size", "Resize_Count",
             "Total_Copied", "Memory_Waste_%", "Exec_Time_ms",
+            "Peak_Memory", "Average_Memory", "Peak_Waste", "Average_Waste",
+            "Memory_Footprint"
         ])
         for r in results:
             writer.writerow([
                 r.strategy_name, r.alpha, r.beta, r.workload,
                 r.final_capacity, r.final_size, r.resize_count,
                 r.total_copied, r.memory_waste_pct, r.exec_time_ms,
+                r.peak_memory, r.avg_memory, r.peak_waste, r.avg_waste,
+                r.final_memory_footprint
             ])
     print(f"\n  CSV saved -> {path}")
 
@@ -245,16 +315,16 @@ def print_summary_tables(results: list[SimResult]):
     """Print a comparison table for each workload."""
     for n in WORKLOADS:
         subset = [r for r in results if r.workload == n]
-        print(f"\n{'='*100}")
+        print(f"\n{'='*130}")
         print(f"  RESULTS TABLE  |  Workload = {n:,} insertions")
-        print(f"{'='*100}")
+        print(f"{'='*130}")
         header = (
             f"  {'Strategy':<28} {'Alpha':>5} {'Beta':>4}  "
             f"{'Resizes':>8} {'Copied':>12} {'FinalCap':>12} "
-            f"{'Waste%':>8} {'Time(ms)':>10}"
+            f"{'Waste%':>8} {'Time(ms)':>10} {'PeakMem':>10} {'AvgMem':>10} {'PeakWst':>10} {'AvgWst':>10} {'Footprint':>10}"
         )
         print(header)
-        print(f"  {'-'*96}")
+        print(f"  {'-'*126}")
         for r in subset:
             a_str = f"{r.alpha:.1f}" if r.alpha > 0 else "  -"
             b_str = f"{r.beta:.0f}" if r.beta > 0 else " -"
@@ -262,9 +332,10 @@ def print_summary_tables(results: list[SimResult]):
                 f"  {r.strategy_name:<28} {a_str:>5} {b_str:>4}  "
                 f"{r.resize_count:>8,} {r.total_copied:>12,} "
                 f"{r.final_capacity:>12,} {r.memory_waste_pct:>7.2f}% "
-                f"{r.exec_time_ms:>10.2f}"
+                f"{r.exec_time_ms:>10.2f} "
+                f"{r.peak_memory:>10,} {r.avg_memory:>10.1f} {r.peak_waste:>10,} {r.avg_waste:>10.1f} {r.final_memory_footprint:>10,}"
             )
-        print(f"{'='*100}")
+        print(f"{'='*130}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -333,6 +404,7 @@ BETA_LINESTYLES = {1: "-", 2: "--", 5: ":", 10: "-."}
 BASELINE_STYLES = {
     "Fixed 2.0x": {"color": "#E17055", "linewidth": 2.5, "linestyle": "-.", "alpha": 0.9},
     "Fixed 1.5x": {"color": "#6C5CE7", "linewidth": 2.5, "linestyle": "-.", "alpha": 0.9},
+    "Python List": {"color": "#00B894", "linewidth": 2.5, "linestyle": "-.", "alpha": 0.9},
 }
 
 
@@ -382,6 +454,8 @@ def plot_bar_comparisons(results: list[SimResult]):
                 colors.append("#E17055")
             elif r.strategy_name == "Fixed 1.5x":
                 colors.append("#6C5CE7")
+            elif r.strategy_name == "Python List":
+                colors.append("#00B894")
             else:
                 colors.append(ALPHA_COLORS.get(r.alpha, "#888888"))
 
@@ -427,7 +501,85 @@ def plot_bar_comparisons(results: list[SimResult]):
         fname = f"formula_a_comparison_{n}_v2.png"
         plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
         print(f"  Chart saved -> {fname}")
-        plt.show()
+        plt.close()
+
+def plot_memory_comparisons(results: list[SimResult]):
+    """Generate 4 bar-chart comparisons for memory metrics for each workload."""
+    for n in WORKLOADS:
+        subset = [r for r in results if r.workload == n]
+
+        names   = [r.strategy_name for r in subset]
+        p_mems  = [r.peak_memory for r in subset]
+        a_mems  = [r.avg_memory for r in subset]
+        p_wsts  = [r.peak_waste for r in subset]
+        a_wsts  = [r.avg_waste for r in subset]
+
+        short_names = []
+        for nm in names:
+            if nm.startswith("FormulaA"):
+                short_names.append(nm.replace("FormulaA(", "A(").replace(")", ")"))
+            else:
+                short_names.append(nm)
+
+        fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+        fig.patch.set_facecolor("#11111B")
+        fig.suptitle(
+            f"Memory Metrics Comparison  |  N = {n:,}",
+            color=C_TEXT, fontsize=15, fontweight="bold", y=0.98,
+        )
+
+        x = np.arange(len(short_names))
+        bar_width = 0.6
+
+        # Assign colors: baselines get distinct colors, Formula A gets gradient
+        colors = []
+        for r in subset:
+            if r.strategy_name == "Fixed 2.0x":
+                colors.append("#E17055")
+            elif r.strategy_name == "Fixed 1.5x":
+                colors.append("#6C5CE7")
+            elif r.strategy_name == "Python List":
+                colors.append("#00B894")
+            else:
+                colors.append(ALPHA_COLORS.get(r.alpha, "#888888"))
+
+        # Chart 1: Peak Memory
+        ax = axes[0, 0]
+        _style_ax(ax, "Peak Memory (Capacity)", "Strategy", "Peak Memory")
+        bars = ax.bar(x, p_mems, bar_width, color=colors, edgecolor="#ffffff20")
+        ax.set_xticks(x)
+        ax.set_xticklabels(short_names, rotation=55, ha="right", fontsize=7, color=C_TEXT)
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"))
+
+        # Chart 2: Average Memory
+        ax = axes[0, 1]
+        _style_ax(ax, "Average Memory", "Strategy", "Avg Memory")
+        bars = ax.bar(x, a_mems, bar_width, color=colors, edgecolor="#ffffff20")
+        ax.set_xticks(x)
+        ax.set_xticklabels(short_names, rotation=55, ha="right", fontsize=7, color=C_TEXT)
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"))
+
+        # Chart 3: Peak Waste
+        ax = axes[1, 0]
+        _style_ax(ax, "Peak Memory Waste", "Strategy", "Peak Waste")
+        bars = ax.bar(x, p_wsts, bar_width, color=colors, edgecolor="#ffffff20")
+        ax.set_xticks(x)
+        ax.set_xticklabels(short_names, rotation=55, ha="right", fontsize=7, color=C_TEXT)
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"))
+
+        # Chart 4: Average Waste
+        ax = axes[1, 1]
+        _style_ax(ax, "Average Memory Waste", "Strategy", "Avg Waste")
+        bars = ax.bar(x, a_wsts, bar_width, color=colors, edgecolor="#ffffff20")
+        ax.set_xticks(x)
+        ax.set_xticklabels(short_names, rotation=55, ha="right", fontsize=7, color=C_TEXT)
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"))
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        fname = f"memory_comparison_{n}_v2.png"
+        plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
+        print(f"  Chart saved -> {fname}")
+        plt.close()
 
 
 def plot_growth_factor_curve():
@@ -444,6 +596,8 @@ def plot_growth_factor_curve():
                alpha=0.7, label="Fixed 2.0x")
     ax.axhline(y=1.5, color="#6C5CE7", linewidth=2, linestyle="-.",
                alpha=0.7, label="Fixed 1.5x")
+    ax.axhline(y=1.125, color="#00B894", linewidth=2, linestyle="-.",
+               alpha=0.7, label="Python List (~1.125x)")
     ax.axhline(y=G_MIN, color="#888888", linewidth=1, linestyle=":",
                alpha=0.5, label=f"g_min = {G_MIN}")
 
@@ -468,7 +622,84 @@ def plot_growth_factor_curve():
     fname = "formula_a_growth_curve_v2.png"
     plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
     print(f"  Chart saved -> {fname}")
-    plt.show()
+    plt.close()
+
+
+def plot_parameter_sensitivity(results: list[SimResult]):
+    """Generate parameter sensitivity charts for Alpha and Beta."""
+    # We will generate these for the largest workload to show the most pronounced effects
+    largest_n = max(WORKLOADS)
+    subset = [r for r in results if r.workload == largest_n and r.strategy_name.startswith("FormulaA")]
+
+    if not subset:
+        return
+
+    # Helper function to plot 4 subplots
+    def _plot_4_metrics(fig, axes, x_vals, metrics_dict, x_label, title):
+        fig.patch.set_facecolor("#11111B")
+        fig.suptitle(title, color=C_TEXT, fontsize=15, fontweight="bold", y=0.98)
+        
+        y_labels = ["Memory Waste (%)", "Resize Count", "Total Copies", "Execution Time (ms)"]
+        keys = ["waste", "resize", "copy", "time"]
+        
+        for idx, (ax_idx, y_label, key) in enumerate(zip([(0,0), (0,1), (1,0), (1,1)], y_labels, keys)):
+            ax = axes[ax_idx[0], ax_idx[1]]
+            _style_ax(ax, y_label, x_label, y_label)
+            
+            for line_label, y_vals in metrics_dict[key].items():
+                ax.plot(x_vals, y_vals, marker='o', label=line_label, linewidth=2, alpha=0.85)
+                
+            ax.legend(fontsize=7, facecolor=C_BG, edgecolor=C_GRID, labelcolor=C_TEXT)
+            if key == "copy":
+                ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"))
+
+    # 1. Alpha Sensitivity (X = Alpha, Lines = Beta)
+    fig_a, axes_a = plt.subplots(2, 2, figsize=(16, 10))
+    metrics_a = {"waste": {}, "resize": {}, "copy": {}, "time": {}}
+    for beta in BETAS:
+        b_label = f"Beta = {beta}"
+        metrics_a["waste"][b_label] = []
+        metrics_a["resize"][b_label] = []
+        metrics_a["copy"][b_label] = []
+        metrics_a["time"][b_label] = []
+        for alpha in ALPHAS:
+            r = next((x for x in subset if x.alpha == alpha and x.beta == beta), None)
+            if r:
+                metrics_a["waste"][b_label].append(r.memory_waste_pct)
+                metrics_a["resize"][b_label].append(r.resize_count)
+                metrics_a["copy"][b_label].append(r.total_copied)
+                metrics_a["time"][b_label].append(r.exec_time_ms)
+                
+    _plot_4_metrics(fig_a, axes_a, ALPHAS, metrics_a, "Alpha (α)", f"Parameter Sensitivity: Alpha (N={largest_n:,})")
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    fname_a = f"sensitivity_alpha_{largest_n}.png"
+    plt.savefig(fname_a, dpi=150, facecolor="#11111B", bbox_inches="tight")
+    print(f"  Chart saved -> {fname_a}")
+    plt.close(fig_a)
+
+    # 2. Beta Sensitivity (X = Beta, Lines = Alpha)
+    fig_b, axes_b = plt.subplots(2, 2, figsize=(16, 10))
+    metrics_b = {"waste": {}, "resize": {}, "copy": {}, "time": {}}
+    for alpha in ALPHAS:
+        a_label = f"Alpha = {alpha}"
+        metrics_b["waste"][a_label] = []
+        metrics_b["resize"][a_label] = []
+        metrics_b["copy"][a_label] = []
+        metrics_b["time"][a_label] = []
+        for beta in BETAS:
+            r = next((x for x in subset if x.alpha == alpha and x.beta == beta), None)
+            if r:
+                metrics_b["waste"][a_label].append(r.memory_waste_pct)
+                metrics_b["resize"][a_label].append(r.resize_count)
+                metrics_b["copy"][a_label].append(r.total_copied)
+                metrics_b["time"][a_label].append(r.exec_time_ms)
+
+    _plot_4_metrics(fig_b, axes_b, BETAS, metrics_b, "Beta (β)", f"Parameter Sensitivity: Beta (N={largest_n:,})")
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    fname_b = f"sensitivity_beta_{largest_n}.png"
+    plt.savefig(fname_b, dpi=150, facecolor="#11111B", bbox_inches="tight")
+    print(f"  Chart saved -> {fname_b}")
+    plt.close(fig_b)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -498,6 +729,7 @@ def print_conclusion(results: list[SimResult]):
 
     fixed_2x = next((r for r in baselines if r.strategy_name == "Fixed 2.0x"), None)
     fixed_15 = next((r for r in baselines if r.strategy_name == "Fixed 1.5x"), None)
+    py_list  = next((r for r in baselines if r.strategy_name == "Python List"), None)
 
     print(f"""
   Analysis at N = {largest_n:,} insertions:
@@ -507,26 +739,27 @@ def print_conclusion(results: list[SimResult]):
        Memory waste                 : {best_waste.memory_waste_pct:.2f}%
      - Fixed 2.0x waste             : {fixed_2x.memory_waste_pct:.2f}%
      - Fixed 1.5x waste             : {fixed_15.memory_waste_pct:.2f}%
+     - Python List waste            : {py_list.memory_waste_pct:.2f}%
      - Improvement over 2.0x        : {fixed_2x.memory_waste_pct - best_waste.memory_waste_pct:+.2f} percentage points
-     - Improvement over 1.5x        : {fixed_15.memory_waste_pct - best_waste.memory_waste_pct:+.2f} percentage points
+     - Improvement over Python List : {py_list.memory_waste_pct - best_waste.memory_waste_pct:+.2f} percentage points
 
   2. RESIZE OVERHEAD
      - Best waste config resizes    : {best_waste.resize_count:,}
      - Fixed 2.0x resizes           : {fixed_2x.resize_count:,}
-     - Fixed 1.5x resizes           : {fixed_15.resize_count:,}
+     - Python List resizes          : {py_list.resize_count:,}
      - More resizes = more frequent interruptions but tighter memory.
 
   3. COPY COST
      - Lowest-copy configuration    : {best_copy.strategy_name}
        Total copies                 : {best_copy.total_copied:,}
      - Fixed 2.0x copies            : {fixed_2x.total_copied:,}
-     - Fixed 1.5x copies            : {fixed_15.total_copied:,}
+     - Python List copies           : {py_list.total_copied:,}
 
   4. EXECUTION PERFORMANCE
      - Fastest Formula A            : {best_time.strategy_name}
        Time                         : {best_time.exec_time_ms:.2f} ms
      - Fixed 2.0x time              : {fixed_2x.exec_time_ms:.2f} ms
-     - Fixed 1.5x time              : {fixed_15.exec_time_ms:.2f} ms
+     - Python List time             : {py_list.exec_time_ms:.2f} ms
 
   5. PRACTICAL ASSESSMENT
      Formula A demonstrates that logarithmic decay of the growth factor
@@ -551,8 +784,8 @@ if __name__ == "__main__":
     print("  Formula A: Logarithmic Adaptive Growth — Phase 1 (Constant Alpha)")
     print("  Parameters: alpha in {1.0, 1.5, 2.0, 2.5, 3.0, 3.5}")
     print("              beta  in {1, 2, 5, 10}")
-    print("  Baselines : Fixed 2.0x, Fixed 1.5x")
-    print("  Workloads : 10K, 100K, 1M insertions")
+    print("  Baselines : Fixed 2.0x, Fixed 1.5x, Python List")
+    print("  Workloads : 10K, 100K, 1M, 10M, 100M insertions")
     print("=" * 70)
 
     # Run experiments
@@ -577,5 +810,11 @@ if __name__ == "__main__":
     # Plot bar comparisons for each workload
     print("\n  Generating comparison charts ...")
     plot_bar_comparisons(all_results)
+    
+    print("\n  Generating memory charts ...")
+    plot_memory_comparisons(all_results)
+    
+    print("\n  Generating parameter sensitivity charts ...")
+    plot_parameter_sensitivity(all_results)
 
     print("\n  All outputs generated. Done.\n")
