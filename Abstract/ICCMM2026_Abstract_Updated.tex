@@ -1,0 +1,118 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{graphicx}
+
+\begin{document}
+
+\begin{center}
+
+{\Large\bfseries
+A Workload-Aware Dynamic Array Growth Algorithm for Efficient Memory Allocation
+}
+
+\vspace{0.6cm}
+
+P.M.D.C.H. Perera$^{1,*}$, A.M.C.M. Aruppola$^{1}$ and C.H. Baduraliya$^{1}$
+
+\vspace{0.3cm}
+
+$^{1}$Department of Physical Science and Technology, Faculty of Applied Sciences,\\
+Sabaragamuwa University of Sri Lanka
+
+\vspace{0.3cm}
+
+*Corresponding author; E-mail: chirathhasara2001@gmail.com
+
+\end{center}
+
+\section*{Background}
+
+Dynamic arrays are fundamental data structures widely used in modern software
+for fast random access and dynamic memory allocation. Conventional
+implementations resize arrays using fixed growth factors (e.g., $1.5\times$
+or $2\times$), compromising between memory utilization and resizing overhead
+\cite{brodnik}. Though recent studies explore alternative array organizations
+to improve memory efficiency \cite{sartor,hoogerwoord}, the utilized resizing
+strategies remain workload-independent, with limited flexibility in adaptation
+to changes in insertion patterns. This study proposes an adaptive growth
+strategy combining resize history with runtime workload intensity.
+
+\section*{Method}
+
+The proposed algorithm models the growth factor using a workload-aware
+harmonic function,
+
+\[
+g(k,v)=
+\min\left(
+g_{\max},
+\max\left(
+g_{\min},
+1+\frac{c_0+\lambda\ln(1+v)}{k}
+\right)
+\right),
+\]
+
+\noindent where $k$ is the resize count and $v = \frac{\Delta N}{\Delta t}$ is
+insertion velocity ($\Delta N$ inserted elements per unit time $\Delta t$
+between resizes). The resized capacity is $C_{\mathrm{new}} = \lfloor
+C_{\mathrm{old}} \times g(k,v) \rfloor$. Implemented in Python 3.11 (64-bit
+integers, initial capacity $C_0=10$, $c_0=2.0$, $\lambda=1.0$, $g_{\min}=1.1$,
+$g_{\max}=2.0$), benchmarks were run on an Intel i5 Windows 10 workstation
+across 10 repeated trials. Evaluation spanned $10^4$--$10^7$ insertions across
+seven workload patterns (including uniform, burst, and mixed), comparing
+against fixed ($1.5\times, 2.0\times$) and Python list ($1.125\times$)
+policies.
+
+\section*{Results and Conclusions}
+
+Selection of the optimal configuration targeted minimizing memory waste while
+maintaining high throughput parity and bounded element copying. Under a $10^7$
+element mixed workload (10 trials), the proposed strategy (denoted as FB P2
+in Fig. \ref{fig:memory_waste}) achieved 1.28\% memory waste, 32 resizes,
+38.76M copied elements, and 6.40M ops/s throughput. Comparatively, Fixed
+2.0$\times$ yielded 4.63\% waste (20 resizes, 10.49M copies), Fixed 1.5$\times$
+yielded 27.77\% waste (35 resizes, 27.69M copies), and Python list yielded
+4.59\% waste (102 resizes, 83.84M copies). The proposed method significantly
+reduced memory waste compared to fixed and feedback-unaware baselines
+($p < 0.01$) without sacrificing throughput. By combining resize history and
+workload awareness, the algorithm expands aggressively during burst insertions
+and adopts conservative growth during lighter workloads. Unlike static resizing
+policies, this work contributes a workload-sensitive adaptive resizing
+mechanism for memory-sensitive systems.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.45\textwidth]{fb2_Memory_Waste_10000000.png}
+\caption{Memory waste percentage across resizing strategies under $10^7$ mixed insertions (proposed method denoted as FB P2).}
+\label{fig:memory_waste}
+\end{figure}
+
+\section*{Keywords}
+
+Dynamic arrays, Adaptive resizing, Harmonic growth, Workload-aware memory allocation, Dynamic memory management
+
+\section*{References}
+
+\begin{enumerate}[label={[\arabic*]}]
+
+\bibitem{brodnik}
+A. Brodnik, S. Carlsson, E. D. Demaine, J. I. Munro and R. Sedgewick,
+\textit{Resizable Arrays in Optimal Time and Space}.
+
+\bibitem{sartor}
+J. B. Sartor, S. M. Blackburn, D. Frampton, M. Hirzel and K. S. McKinley,
+\textit{Z-rays: Divide Arrays and Conquer Speed and Flexibility},
+Proceedings of the ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI), 2010.
+
+\bibitem{hoogerwoord}
+R. R. Hoogerwoord,
+\textit{A Logarithmic Implementation of Flexible Arrays}.
+
+\end{enumerate}
+
+\end{document}

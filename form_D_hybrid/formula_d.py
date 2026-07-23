@@ -1,44 +1,69 @@
-"""
-Phase 4 Simulation: Formula D (Dynamic Weight Hybrid)
-"""
-
-import sys
 import os
 import math
 import csv
 import time
-from dataclasses import dataclass, field
+import random
+from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+from skopt import gp_minimize
+from skopt.space import Real
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. WORKLOAD GENERATORS
 # ═══════════════════════════════════════════════════════════════════════
-def generate_constant_pattern(n: int, v: float) -> list[float]:
+def generate_uniform_pattern(n: int) -> list[float]:
+    v = 100.0
     return [i / v for i in range(n)]
 
-def generate_accelerating_pattern(n: int, v_start: float, v_end: float) -> list[float]:
-    dt_start = 1.0 / v_start
-    dt_end = 1.0 / v_end
-    t = 0.0
-    timestamps = []
-    for i in range(n):
-        timestamps.append(t)
-        progress = i / max(1, n - 1)
-        dt = dt_start + progress * (dt_end - dt_start)
-        t += dt
-    return timestamps
+def generate_increasing_pattern(n: int) -> list[float]:
+    v_start, v_end = 10.0, 1000.0
+    dt_start, dt_end = 1.0 / v_start, 1.0 / v_end
+    progress = np.linspace(0, 1, n)
+    dts = dt_start + progress * (dt_end - dt_start)
+    return np.cumsum(dts).tolist()
 
-def generate_spiky_pattern(n: int, v_base: float, v_spike: float, spike_freq: int, spike_len: int) -> list[float]:
-    t = 0.0
-    timestamps = []
-    for i in range(n):
-        timestamps.append(t)
-        in_spike = (i % spike_freq) < spike_len
-        dt = 1.0 / v_spike if in_spike else 1.0 / v_base
-        t += dt
-    return timestamps
+def generate_decreasing_pattern(n: int) -> list[float]:
+    v_start, v_end = 1000.0, 10.0
+    dt_start, dt_end = 1.0 / v_start, 1.0 / v_end
+    progress = np.linspace(0, 1, n)
+    dts = dt_start + progress * (dt_end - dt_start)
+    return np.cumsum(dts).tolist()
+
+def generate_burst_pattern(n: int) -> list[float]:
+    v_base, v_burst = 10.0, 1000.0
+    dts = np.full(n, 1.0 / v_base)
+    burst_starts = np.random.choice(n, size=n//100, replace=False)
+    for start in burst_starts:
+        dts[start:min(n, start + 50)] = 1.0 / v_burst
+    return np.cumsum(dts).tolist()
+
+def generate_random_pattern(n: int) -> list[float]:
+    v_min, v_max = 10.0, 1000.0
+    vs = np.random.uniform(v_min, v_max, n)
+    dts = 1.0 / vs
+    return np.cumsum(dts).tolist()
+
+def generate_periodic_pattern(n: int) -> list[float]:
+    v_low, v_high, period_len = 10.0, 1000.0, max(1, n//20)
+    dts = np.empty(n)
+    for i in range(0, n, period_len * 2):
+        dts[i:i+period_len] = 1.0 / v_high
+        dts[i+period_len:i+period_len*2] = 1.0 / v_low
+    return np.cumsum(dts).tolist()
+
+def generate_mixed_pattern(n: int) -> list[float]:
+    phase_len = max(1, n // 3)
+    dts1 = np.full(phase_len, 1.0 / 100.0)
+    dts2 = np.full(phase_len, 1.0 / 10.0)
+    burst_starts = np.random.choice(phase_len, size=phase_len//100, replace=False)
+    for start in burst_starts:
+        dts2[start:min(phase_len, start + 50)] = 1.0 / 1000.0
+    rem = n - 2 * phase_len
+    dts3 = 1.0 / np.random.uniform(10.0, 500.0, rem)
+    dts = np.concatenate([dts1, dts2, dts3])
+    return np.cumsum(dts).tolist()
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. SIMULATOR
@@ -47,14 +72,32 @@ def generate_spiky_pattern(n: int, v_base: float, v_spike: float, spike_freq: in
 class SimResult:
     strategy_name: str
     pattern_name: str
+    weight_a: float
+    weight_b: float
+    lambda_val: float
     workload: int
     final_capacity: int
     final_size: int
     resize_count: int
     total_copied: int
     memory_waste_pct: float
+    exec_time_ms: float = 0.0
+    throughput: float = 0.0
+    avg_latency: float = 0.0
+    peak_memory: int = 0
+    avg_memory: float = 0.0
+    peak_waste: int = 0
+    avg_waste: float = 0.0
+    memory_footprint: int = 0
+    avg_growth_factor: float = 0.0
+    max_growth_factor: float = 0.0
+    min_growth_factor: float = 0.0
+    avg_velocity: float = 0.0
+    max_velocity: float = 0.0
+    min_velocity: float = 0.0
+    objective_score: float = 0.0
 
-class DynamicArraySimulatorD:
+class DynamicArraySimulatorPhase2:
     def __init__(self, initial_capacity: int = 10):
         self.capacity = initial_capacity
         self.size = 0
@@ -65,197 +108,391 @@ class DynamicArraySimulatorD:
 
     def run(self, timestamps: list[float], growth_fn) -> SimResult:
         n = len(timestamps)
+        t_start = time.perf_counter()
         
+        current_cap = self.capacity
+        last_resize_size = 0
+        sum_capacity = 0
+        sum_waste = 0
+        peak_waste = 0
+        
+        g_sum = 0.0; g_max = 0.0; g_min = float('inf'); g_count = 0
+        v_sum = 0.0; v_max = 0.0; v_min = float('inf'); v_count = 0
+
         for i, t in enumerate(timestamps):
             if self.size == self.capacity:
-                delta_n = self.size - self.last_resize_size
+                delta_n = self.size - last_resize_size
                 delta_t = t - self.last_resize_time
                 v = delta_n / delta_t if delta_t > 0 else float('inf')
                 if v < 0: v = 0.0
                 
-                k = self.resize_count + 1
-                new_cap = growth_fn(self.capacity, k, v)
+                v_sum += v
+                if v > v_max: v_max = v
+                if v < v_min: v_min = v
+                v_count += 1
+                
+                new_cap = growth_fn(self.capacity, self.resize_count + 1, v)
                 new_cap = max(new_cap, self.capacity + 1)
+                
+                g = new_cap / self.capacity
+                g_sum += g
+                if g > g_max: g_max = g
+                if g < g_min: g_min = g
+                g_count += 1
+                
+                count = self.size - last_resize_size
+                sum_capacity += count * current_cap
+                sum_sizes = (self.size * (self.size + 1) // 2) - (last_resize_size * (last_resize_size + 1) // 2)
+                sum_waste += (count * current_cap) - sum_sizes
+                
+                waste_after_resize = new_cap - self.size
+                if waste_after_resize > peak_waste:
+                    peak_waste = waste_after_resize
                 
                 self.total_copied += self.size
                 self.capacity = new_cap
+                current_cap = new_cap
                 self.resize_count += 1
                 self.last_resize_size = self.size
                 self.last_resize_time = t
                 
             self.size += 1
 
-        waste_pct = ((self.capacity - self.size) / self.capacity) * 100.0
+        count = self.size - self.last_resize_size
+        if count > 0:
+            sum_capacity += count * current_cap
+            sum_sizes = (self.size * (self.size + 1) // 2) - (self.last_resize_size * (self.last_resize_size + 1) // 2)
+            sum_waste += (count * current_cap) - sum_sizes
+            waste_after = current_cap - self.last_resize_size
+            if waste_after > peak_waste:
+                peak_waste = waste_after
 
+        t_end = time.perf_counter()
+        
+        exec_time = (t_end - t_start) * 1000
+        throughput = n / (exec_time / 1000) if exec_time > 0 else 0
+        avg_latency = (exec_time / n) * 1e6 if n > 0 else 0
+        waste_pct = ((self.capacity - self.size) / self.capacity) * 100.0
+        
         return SimResult(
-            strategy_name="", pattern_name="", workload=n,
+            strategy_name="", pattern_name="", weight_a=0.0, weight_b=0.0, lambda_val=0.0, workload=n,
             final_capacity=self.capacity, final_size=self.size,
             resize_count=self.resize_count, total_copied=self.total_copied,
-            memory_waste_pct=round(waste_pct, 4)
+            memory_waste_pct=round(waste_pct, 4),
+            exec_time_ms=round(exec_time, 4),
+            throughput=round(throughput, 2),
+            avg_latency=round(avg_latency, 2),
+            peak_memory=self.capacity,
+            avg_memory=round(sum_capacity / n if n > 0 else 0, 2),
+            peak_waste=peak_waste,
+            avg_waste=round(sum_waste / n if n > 0 else 0, 2),
+            memory_footprint=self.capacity * 8,
+            avg_growth_factor=round(g_sum / g_count if g_count > 0 else 0, 4),
+            max_growth_factor=round(g_max if g_count > 0 else 0, 4),
+            min_growth_factor=round(g_min if g_count > 0 else 0, 4),
+            avg_velocity=round(v_sum / v_count if v_count > 0 else 0, 2),
+            max_velocity=round(v_max if v_count > 0 else 0, 2),
+            min_velocity=round(v_min if v_count > 0 else 0, 2)
         )
 
 # ═══════════════════════════════════════════════════════════════════════
-# 3. GROWTH STRATEGIES
+# 3. GROWTH STRATEGIES & BASELINES
 # ═══════════════════════════════════════════════════════════════════════
 G_MIN, G_MAX = 1.1, 2.0
+ALPHA0 = 2.5
+BETA = 15.0
+C0 = 2.0
 
-def make_formula_d_growth(s: float):
-    alpha = 3.0
-    beta = 5.0
-    lam = 5.0
-
+def make_formula_c(wa: float, lam: float):
+    wb = 1.0 - wa
     def growth_fn(capacity: int, k: int, v: float) -> int:
-        if v == float('inf'):
-            v_val = 10.0 # fallback
-        else:
-            v_val = v
-            
-        ln_v = math.log(1 + v_val)
-        w_v = ln_v / (ln_v + s)
-        
-        part_B = (1.0 + lam * ln_v) / k
-        part_A = alpha / math.log(capacity + beta)
-        
-        g = 1.0 + w_v * part_B + (1.0 - w_v) * part_A
+        if v == float('inf'): v = 1000.0
+        term_a = (ALPHA0 + lam * math.log(1 + v)) / math.log(capacity + BETA)
+        term_b = (C0 + lam * math.log(1 + v)) / k
+        g = 1.0 + wa * term_a + wb * term_b
         return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
     return growth_fn
 
-def formula_a_phase2_best(capacity: int, k: int, v: float) -> int:
-    lam = 1.0 
-    if v == float('inf'): v = 10.0
-    g = 1.0 + (3.0 + lam * math.log(1 + v)) / math.log(capacity + 5)
+def make_formula_b_phase2(c0: float, lam: float):
+    def growth_fn(capacity: int, k: int, v: float) -> int:
+        if v == float('inf'): v = 1000.0
+        c_v = c0 + lam * math.log(1 + v)
+        g = 1.0 + c_v / k
+        return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
+    return growth_fn
+
+def make_formula_b_phase1(c0: float):
+    def growth_fn(capacity: int, k: int, v: float) -> int:
+        g = 1.0 + c0 / k
+        return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
+    return growth_fn
+
+def formula_a_phase1(capacity: int, k: int, v: float) -> int:
+    g = 1.0 + 3.5 / math.log(capacity + 10)
     return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
 
-def formula_b_phase2_best(capacity: int, k: int, v: float) -> int:
-    lam = 5.0 
-    if v == float('inf'): v = 10.0
-    g = 1.0 + (1.0 + lam * math.log(1 + v)) / k
-    return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
-
-def formula_c_best(capacity: int, k: int, v: float) -> int:
-    # 0.8/0.2 Capacity Oriented
-    if v == float('inf'): v = 10.0
-    part_A = (3.0 + 2.0 * math.log(1 + v)) / math.log(capacity + 5.0)
-    part_B = 1.0 / k
-    g = 1.0 + 0.8 * part_A + 0.2 * part_B
+def formula_a_phase2(capacity: int, k: int, v: float) -> int:
+    if v == float('inf'): v = 1000.0
+    alpha_v = 2.5 + 0.5 * math.log(1 + v)
+    g = 1.0 + alpha_v / math.log(capacity + 15)
     return int(math.floor(capacity * min(G_MAX, max(G_MIN, g))))
 
 def fixed_2x_growth(capacity: int, k: int, v: float) -> int: return capacity * 2
 def fixed_1_5x_growth(capacity: int, k: int, v: float) -> int: return capacity + (capacity >> 1)
+def python_list_growth(capacity: int, k: int, v: float) -> int: 
+    newsize = capacity + 1
+    return newsize + (newsize >> 3) + (3 if newsize < 9 else 6)
+
 
 # ═══════════════════════════════════════════════════════════════════════
-# 4. EXPERIMENT RUNNER
+# 4. OPTIMIZATION & EXPERIMENT RUNNER
 # ═══════════════════════════════════════════════════════════════════════
-WORKLOADS = [100_000, 1_000_000]
+WORKLOADS = [10_000, 100_000, 1_000_000, 10_000_000]
+
+def calculate_j_score(res: SimResult, base_waste: float, base_copy: float, base_time: float) -> float:
+    # Normalize metrics based on robust baselines for the workload
+    norm_waste = res.memory_waste_pct / max(base_waste, 1.0)
+    norm_copy = res.total_copied / max(base_copy, 1.0)
+    norm_time = res.exec_time_ms / max(base_time, 1.0)
+    
+    j = 0.4 * norm_waste + 0.4 * norm_copy + 0.2 * norm_time
+    return round(j, 4)
 
 def run_all_experiments():
     results = []
+    opt_logs = []
     patterns = {
-        "Constant (v=10)": lambda n: generate_constant_pattern(n, 10.0),
-        "High Vel (v=1000)": lambda n: generate_constant_pattern(n, 1000.0),
-        "Accel (1->1000)": lambda n: generate_accelerating_pattern(n, 1.0, 1000.0),
-        "Spiky": lambda n: generate_spiky_pattern(n, 10.0, 1000.0, n//10, n//50),
+        "Uniform": generate_uniform_pattern,
+        "Increasing": generate_increasing_pattern,
+        "Decreasing": generate_decreasing_pattern,
+        "Burst": generate_burst_pattern,
+        "Random": generate_random_pattern,
+        "Periodic": generate_periodic_pattern,
+        "Mixed": generate_mixed_pattern
     }
-
-    strats = [
-        ("Fixed 2.0x", fixed_2x_growth),
-        ("FA P2 (k=1.0)", formula_a_phase2_best),
-        ("FB P2 (l=5.0)", formula_b_phase2_best),
-        ("FC (0.8/0.2)", formula_c_best),
-        ("FD (s=3.0)", make_formula_d_growth(3.0)),
-        ("FD (s=5.0)", make_formula_d_growth(5.0)),
-        ("FD (s=10.0)", make_formula_d_growth(10.0)),
-    ]
-
-    total = len(WORKLOADS) * len(patterns) * len(strats)
-    run_num = 0
-
+    
     for n in WORKLOADS:
         print("\n" + "="*80)
         print(f"  WORKLOAD: {n:>12,} insertions")
         print("="*80)
         
         for pat_name, pat_fn in patterns.items():
+            print(f"\n  --- {pat_name} Workload ---")
             timestamps = pat_fn(n)
+            
+            # Step 1: Run baselines to get normalization bounds
+            sim = DynamicArraySimulatorPhase2()
+            res_2x = sim.run(timestamps, fixed_2x_growth)
+            res_list = sim.run(timestamps, python_list_growth)
+            
+            base_waste = max(res_2x.memory_waste_pct, 1.0)  # typically highest waste
+            base_copy = max(res_list.total_copied, 1.0)     # typically highest copies
+            base_time = max(res_list.exec_time_ms, res_2x.exec_time_ms, 1.0) 
+            
+            # Record explicit baselines
+            baselines = [
+                ("Fixed 2.0x", fixed_2x_growth),
+                ("Fixed 1.5x", fixed_1_5x_growth),
+                ("Python List", python_list_growth),
+                ("Formula A Phase 1", formula_a_phase1),
+                ("Formula A Phase 2", formula_a_phase2),
+                ("Formula B Phase 1", make_formula_b_phase1(2.0)),
+                ("Formula B Phase 2", make_formula_b_phase2(2.0, 1.0)),
+                ("Formula C (best manual configuration)", make_formula_c(0.5, 1.0))
+            ]
+            
+            for strat_name, fn in baselines:
+                sim = DynamicArraySimulatorPhase2()
+                r = sim.run(timestamps, fn)
+                r.strategy_name = strat_name
+                r.pattern_name = pat_name
+                if strat_name == "Formula C (best manual configuration)":
+                    r.weight_a = 0.5
+                    r.weight_b = 0.5
+                    r.lambda_val = 1.0
+                r.objective_score = calculate_j_score(r, base_waste, base_copy, base_time)
+                results.append(r)
                 
-            for strat_name, fn in strats:
-                run_num += 1
-                print(f"  [{run_num}/{total}] {pat_name} | {strat_name} ...", end="", flush=True)
-                sim = DynamicArraySimulatorD()
-                res = sim.run(timestamps, fn)
-                res.strategy_name = strat_name
-                res.pattern_name = pat_name
-                results.append(res)
-                print(" done")
-    return results
+            # Step 2: Optimization
+            print("  Optimizing Formula D (35 evaluations)...", end="", flush=True)
+            
+            opt_history_j = []
+            
+            def objective(params):
+                wa, lam = params
+                sim = DynamicArraySimulatorPhase2()
+                r = sim.run(timestamps, make_formula_c(wa, lam))
+                j = calculate_j_score(r, base_waste, base_copy, base_time)
+                opt_history_j.append(j)
+                return j
+            
+            # Space: wa [0, 1], lam [0.1, 5]
+            space = [Real(0.0, 1.0, name='weight_a'), Real(0.1, 5.0, name='lambda')]
+            
+            res_opt = gp_minimize(
+                objective, 
+                space, 
+                n_calls=35, 
+                n_initial_points=10, 
+                random_state=42
+            )
+            
+            best_wa, best_lam = res_opt.x
+            best_j = res_opt.fun
+            print(f" done -> Best J: {best_j:.4f} (WA={best_wa:.2f}, Lam={best_lam:.2f})")
+            
+            # Record optimized Formula D
+            sim = DynamicArraySimulatorPhase2()
+            r_opt = sim.run(timestamps, make_formula_c(best_wa, best_lam))
+            r_opt.strategy_name = "Formula D (optimized)"
+            r_opt.pattern_name = pat_name
+            r_opt.weight_a = round(best_wa, 4)
+            r_opt.weight_b = round(1.0 - best_wa, 4)
+            r_opt.lambda_val = round(best_lam, 4)
+            r_opt.objective_score = round(best_j, 4)
+            results.append(r_opt)
+            
+            # Save opt log
+            opt_logs.append({
+                'workload': n,
+                'pattern': pat_name,
+                'history': opt_history_j,
+                'best_wa': best_wa,
+                'best_lam': best_lam,
+                'best_j': best_j
+            })
+            
+    return results, opt_logs
 
-def export_csv(results):
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "formula_d_results.csv")
-    with open(path, "w", newline="", encoding="utf-8") as f:
+
+def export_data(results, opt_logs):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # CSV
+    csv_path = os.path.join(base_dir, "formula_d_results.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Pattern", "Strategy", "Workload", "Final_Capacity", "Final_Size", "Resize_Count", "Total_Copied", "Memory_Waste_Pct"])
+        writer.writerow([
+            "Pattern", "Workload", "Strategy", "WeightA", "WeightB", "Lambda", 
+            "Objective Score", "Memory Waste", "Copy Cost", "Execution Time", 
+            "Throughput", "Resize Count", "Peak Memory", "Average Memory", 
+            "Memory Footprint", "Peak Waste", "Average Waste", 
+            "Average Growth Factor", "Maximum Growth Factor", "Minimum Growth Factor", 
+            "Average Velocity", "Maximum Velocity", "Minimum Velocity"
+        ])
         for r in results:
-            writer.writerow([r.pattern_name, r.strategy_name, r.workload, r.final_capacity, r.final_size, r.resize_count, r.total_copied, r.memory_waste_pct])
-    print(f"\n  CSV saved -> {path}")
-
-def generate_report(results):
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.txt")
-    with open(path, "w", encoding="utf-8") as f:
-        for n in WORKLOADS:
-            subset = [r for r in results if r.workload == n]
-            f.write("\n" + "="*100 + "\n")
-            f.write(f"  RESULTS TABLE  |  Workload = {n:,} insertions\n")
-            f.write("="*100 + "\n")
-            patterns = list(dict.fromkeys(r.pattern_name for r in subset))
-            for pat in patterns:
-                pat_rows = [r for r in subset if r.pattern_name == pat]
-                f.write(f"\n  Pattern: {pat}\n")
-                header = f"  {'Strategy':<28} {'Resizes':>8} {'Copied':>12} {'FinalCap':>12} {'Waste%':>8}\n"
-                f.write(header)
-                f.write("  " + "-"*96 + "\n")
-                for r in pat_rows:
-                    f.write(f"  {r.strategy_name:<28} {r.resize_count:>8,} {r.total_copied:>12,} {r.final_capacity:>12,} {r.memory_waste_pct:>7.2f}%\n")
-            f.write("="*100 + "\n")
-    print(f"  TXT Report saved -> {path}")
-
-def plot_comparisons(results):
-    for n in WORKLOADS:
-        subset = [r for r in results if r.workload == n]
+            writer.writerow([
+                r.pattern_name, r.workload, r.strategy_name, r.weight_a, r.weight_b, r.lambda_val,
+                r.objective_score, r.memory_waste_pct, r.total_copied, r.exec_time_ms,
+                r.throughput, r.resize_count, r.peak_memory, r.avg_memory, r.memory_footprint,
+                r.peak_waste, r.avg_waste, r.avg_growth_factor, r.max_growth_factor, r.min_growth_factor,
+                r.avg_velocity, r.max_velocity, r.min_velocity
+            ])
+            
+    # Optimization Log
+    opt_path = os.path.join(base_dir, "formula_d_optimization_log.csv")
+    with open(opt_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Workload", "Pattern", "Best WeightA", "Best Lambda", "Best Score", "History"])
+        for lg in opt_logs:
+            writer.writerow([
+                lg['workload'], lg['pattern'], round(lg['best_wa'],4), round(lg['best_lam'],4), round(lg['best_j'],4),
+                "|".join([f"{v:.4f}" for v in lg['history']])
+            ])
+            
+    # Summary Report
+    rep_path = os.path.join(base_dir, "formula_d_report.txt")
+    with open(rep_path, "w", encoding="utf-8") as f:
+        f.write("==================================================\n")
+        f.write("Formula D Optimization Summary Report\n")
+        f.write("==================================================\n\n")
+        
+        largest_n = max(WORKLOADS)
+        f.write(f"Results for N = {largest_n:,}\n\n")
+        
+        subset = [r for r in results if r.workload == largest_n]
         patterns = list(dict.fromkeys(r.pattern_name for r in subset))
         
-        fig, axes = plt.subplots(len(patterns), 2, figsize=(14, 4 * len(patterns)))
+        for pat in patterns:
+            f.write(f"Pattern: {pat}\n")
+            r_c = next((r for r in subset if r.pattern_name == pat and r.strategy_name == "Formula C (best manual configuration)"), None)
+            r_d = next((r for r in subset if r.pattern_name == pat and r.strategy_name == "Formula D (optimized)"), None)
+            
+            f.write(f"  Formula D (Optimized):\n")
+            f.write(f"    Best WeightA : {r_d.weight_a:.4f}\n")
+            f.write(f"    Best WeightB : {r_d.weight_b:.4f}\n")
+            f.write(f"    Best Lambda  : {r_d.lambda_val:.4f}\n")
+            f.write(f"    Objective J  : {r_d.objective_score:.4f}\n")
+            
+            if r_c:
+                f.write(f"  Formula C (Manual):\n")
+                f.write(f"    Objective J  : {r_c.objective_score:.4f}\n")
+                if r_c.objective_score > 0:
+                    imp = ((r_c.objective_score - r_d.objective_score) / r_c.objective_score) * 100
+                    f.write(f"  -> {imp:.1f}% improvement in combined score\n")
+            f.write("-" * 50 + "\n")
+
+
+def plot_results(results, opt_logs):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    largest_n = max(WORKLOADS)
+    subset = [r for r in results if r.workload == largest_n]
+    if not subset: return
+    
+    # Opt Convergence Graph for Mixed
+    mixed_log = next((lg for lg in opt_logs if lg['workload'] == largest_n and lg['pattern'] == 'Mixed'), None)
+    if mixed_log:
+        hist = mixed_log['history']
+        best_so_far = np.minimum.accumulate(hist)
+        plt.figure(figsize=(8,5), facecolor="#11111B")
+        ax = plt.gca()
+        ax.set_facecolor("#1E1E2E")
+        plt.plot(range(1, len(hist)+1), best_so_far, color="#38D9A9", marker='o', label="Best J Score")
+        plt.title(f"Optimization Convergence (Mixed, N={largest_n:,})", color="#CDD6F4")
+        plt.xlabel("Iteration", color="#CDD6F4")
+        plt.ylabel("Objective Score J", color="#CDD6F4")
+        ax.tick_params(colors="#CDD6F4")
+        plt.grid(color="#45475A", linestyle="--", alpha=0.5)
+        plt.savefig(os.path.join(base_dir, f"fd_Optimization_Convergence_{largest_n}.png"), dpi=100, facecolor="#11111B", bbox_inches="tight")
+        plt.close()
+
+    # Compare Formula C vs Formula D
+    metrics = {
+        "Memory Waste": lambda x: x.memory_waste_pct,
+        "Copy Cost": lambda x: x.total_copied,
+        "Execution Time": lambda x: x.exec_time_ms,
+        "Objective Score": lambda x: x.objective_score
+    }
+    
+    pat_res = [r for r in subset if r.pattern_name == "Mixed"]
+    
+    # We will plot just a few key baselines and C vs D
+    include = ["Fixed 2.0x", "Fixed 1.5x", "Python List", "Formula C (best manual configuration)", "Formula D (optimized)"]
+    display_res = [r for r in pat_res if r.strategy_name in include]
+    # sort by include order
+    display_res.sort(key=lambda x: include.index(x.strategy_name))
+    names = [r.strategy_name.replace(" (best manual configuration)", "").replace(" (optimized)", "").replace("Fixed", "Fx").replace("Python List", "PyList") for r in display_res]
+
+    for m_name, m_fn in metrics.items():
+        fig, ax = plt.subplots(figsize=(8, 5))
         fig.patch.set_facecolor("#11111B")
-        fig.suptitle(f"Formula D (Dynamic Weight Hybrid) | N = {n:,}", color="#CDD6F4", fontsize=14, fontweight="bold", y=0.98)
-                     
-        if len(patterns) == 1: axes = [axes]
-            
-        for i, pat in enumerate(patterns):
-            pat_res = [r for r in subset if r.pattern_name == pat]
-            short_names = [r.strategy_name for r in pat_res]
-            x = np.arange(len(short_names))
-            
-            for j, (metric, title, color) in enumerate([
-                ([r.memory_waste_pct for r in pat_res], f"[{pat}] Waste (%)", "#FF6B6B"),
-                ([r.total_copied for r in pat_res], f"[{pat}] Copies", "#4DABF7")
-            ]):
-                ax = axes[i][j]
-                ax.set_facecolor("#1E1E2E")
-                ax.set_title(title, color="#CDD6F4", fontsize=11)
-                bars = ax.bar(x, metric, color=color)
-                ax.set_xticks(x)
-                ax.set_xticklabels(short_names, rotation=35, ha="right", color="#CDD6F4", fontsize=8)
-                ax.tick_params(colors="#CDD6F4", labelsize=8)
-                if j == 1: ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v>=1e6 else f"{v/1e3:.0f}K"))
-                
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-        fname = f"formula_d_comparison_{n}.png"
-        plt.savefig(fname, dpi=150, facecolor="#11111B", bbox_inches="tight")
-        print(f"  Chart saved -> {fname}")
+        ax.set_facecolor("#1E1E2E")
+        plt.title(f"{m_name} Comparison (Mixed, N={largest_n:,})", color="#CDD6F4")
+        
+        vals = [m_fn(r) for r in display_res]
+        colors = ["#4DABF7" if "Formula" not in n else ("#FFD43B" if "C" in n else "#38D9A9") for n in names]
+        
+        ax.bar(names, vals, color=colors)
+        ax.tick_params(colors="#CDD6F4")
+        if "Copied" in m_name or "Copy Cost" in m_name:
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v/1e6:.1f}M" if v>=1e6 else f"{v/1e3:.0f}K"))
+        
+        clean_name = m_name.replace(" ", "_")
+        plt.savefig(os.path.join(base_dir, f"fd_{clean_name}_Comparison_{largest_n}.png"), dpi=100, facecolor="#11111B", bbox_inches="tight")
         plt.close()
 
 if __name__ == "__main__":
-    os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
-    results = run_all_experiments()
-    export_csv(results)
-    generate_report(results)
-    plot_comparisons(results)
+    results, opt_logs = run_all_experiments()
+    export_data(results, opt_logs)
+    plot_results(results, opt_logs)
+    print("\nFormula D Optimization Completed Successfully.")

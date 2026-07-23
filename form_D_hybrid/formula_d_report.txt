@@ -1,0 +1,76 @@
+==================================================
+Formula D Optimization Summary Report
+==================================================
+
+Results for N = 10,000,000
+
+Pattern: Uniform
+  Formula D (Optimized):
+    Best WeightA : 0.9472
+    Best WeightB : 0.0528
+    Best Lambda  : 4.5649
+    Objective J  : 0.6195
+  Formula C (Manual):
+    Objective J  : 2.4208
+  -> 74.4% improvement in combined score
+--------------------------------------------------
+Pattern: Increasing
+  Formula D (Optimized):
+    Best WeightA : 0.0000
+    Best WeightB : 1.0000
+    Best Lambda  : 5.0000
+    Objective J  : 0.3252
+  Formula C (Manual):
+    Objective J  : 0.9887
+  -> 67.1% improvement in combined score
+--------------------------------------------------
+Pattern: Decreasing
+  Formula D (Optimized):
+    Best WeightA : 0.7693
+    Best WeightB : 0.2307
+    Best Lambda  : 3.1582
+    Objective J  : 0.1749
+  Formula C (Manual):
+    Objective J  : 2.1823
+  -> 92.0% improvement in combined score
+--------------------------------------------------
+Pattern: Burst
+  Formula D (Optimized):
+    Best WeightA : 0.9525
+    Best WeightB : 0.0475
+    Best Lambda  : 1.1817
+    Objective J  : 0.4858
+  Formula C (Manual):
+    Objective J  : 2.0442
+  -> 76.2% improvement in combined score
+--------------------------------------------------
+Pattern: Random
+  Formula D (Optimized):
+    Best WeightA : 0.9646
+    Best WeightB : 0.0354
+    Best Lambda  : 1.9821
+    Objective J  : 0.2360
+  Formula C (Manual):
+    Objective J  : 0.9674
+  -> 75.6% improvement in combined score
+--------------------------------------------------
+Pattern: Periodic
+  Formula D (Optimized):
+    Best WeightA : 0.9386
+    Best WeightB : 0.0614
+    Best Lambda  : 0.1038
+    Objective J  : 0.5672
+  Formula C (Manual):
+    Objective J  : 1.4907
+  -> 62.0% improvement in combined score
+--------------------------------------------------
+Pattern: Mixed
+  Formula D (Optimized):
+    Best WeightA : 0.9955
+    Best WeightB : 0.0045
+    Best Lambda  : 3.0944
+    Objective J  : 0.2589
+  Formula C (Manual):
+    Objective J  : 1.4415
+  -> 82.0% improvement in combined score
+--------------------------------------------------
