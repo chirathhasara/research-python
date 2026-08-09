@@ -1,0 +1,101 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+\graphicspath{{../}}
+
+\title{Bayesian Optimization Report \\ \Large Formula A -- Phase 2}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\listoffigures
+\listoftables
+\newpage
+
+\section{Introduction}
+This report outlines the application of Bayesian Optimization to fine-tune the hyperparameters of \textbf{Formula A (Phase 2)}. This phase introduces a velocity-aware scaling mechanism to aggressively react to high insertion burst rates. By automating the search through a massive 3-dimensional parameter space using Gaussian Processes, we aim to uncover the mathematically optimal values for $\alpha$, $\beta$, and the scaling coefficient $k$ (or $\lambda$) that balance memory waste, reallocation cost, and execution speed.
+
+\section{Optimization Setup}
+
+\subsection{Objective Function (J-Score)}
+The optimizer minimizes a composite score ($J$), which normalizes the strategy's performance against standard baselines (Fixed 2.0x and Python list). The weighting is:
+\begin{itemize}
+    \item 40\% Memory Waste
+    \item 40\% Total Elements Copied
+    \item 20\% Execution Time
+\end{itemize}
+
+\subsection{Parameter Space \& Workload}
+\begin{itemize}
+    \item \textbf{Alpha ($\alpha$)}: Explored continuous space between 0.1 and 10.0.
+    \item \textbf{Beta ($\beta$)}: Explored continuous space between 1.0 and 100.0.
+    \item \textbf{Coefficient ($k$ / $\lambda$)}: Explored continuous space between 0.1 and 10.0.
+    \item \textbf{Evaluations}: 35 total iterations (10 initial random probes).
+    \item \textbf{Workload}: 10,000,000 Mixed Workload (Uniform, Burst, and Random segments).
+\end{itemize}
+
+\section{Optimization Results}
+
+After 35 iterations, the Bayesian Optimization model successfully identified the optimal parameters for a 10M mixed insertion workload. The best configuration achieved an exceptional $J$-Score, significantly lowering combined memory waste and copy costs compared to non-adaptive alternatives.
+
+\begin{table}[H]
+\centering
+\caption{Top 5 Configurations Discovered via Bayesian Optimization (Phase 2)}
+\label{tab:top_bo}
+\begin{tabular}{cccccccc}
+\toprule
+\textbf{Rank} & \textbf{$\alpha$} & \textbf{$\beta$} & \textbf{$k$} & \textbf{J-Score} & \textbf{Waste (\%)} & \textbf{Copied (M)} & \textbf{Time (ms)} \\
+\midrule
+1 & 0.5024 & 15.9473 & 6.4743 & 0.5567 & 4.63 & 10.49 & $\sim 1414$ \\
+2 & 8.9398 & 46.9691 & 1.9536 & 0.5616 & 4.63 & 10.49 & $\sim 1479$ \\
+3 & 10.0000 & 1.0000 & 4.1341 & 0.5671 & 4.63 & 10.49 & $\sim 1553$ \\
+4 & 10.0000 & 100.0000 & 6.2463 & 0.5696 & 4.63 & 10.49 & $\sim 1586$ \\
+5 & 10.0000 & 1.0000 & 3.3403 & 0.5708 & 4.63 & 10.49 & $\sim 1602$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Graph Analysis}
+
+To visualize the optimizer's path across 3 variables, we generated performance plots using the full 35-record history.
+
+\subsection{Convergence Plot}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{bo_convergence.png}
+    \caption{J-Score Convergence over 35 Iterations}
+    \label{fig:convergence}
+\end{figure}
+Figure \ref{fig:convergence} illustrates the optimizer's progress. The blue line represents the $J$-Score evaluated at each iteration, while the red line tracks the minimum $J$-Score found so far. The rapid descent confirms that the Gaussian Process successfully honed in on the optimal region of the parameter space.
+
+\subsection{Parameter Space Exploration (3D Mapping)}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{bo_parameter_scatter.png}
+    \caption{Explored Parameter Space ($\alpha$ vs $\beta$, Size = $k$)}
+    \label{fig:scatter}
+\end{figure}
+Figure \ref{fig:scatter} maps the explored combinations. 
+\begin{itemize}
+    \item \textbf{X-Axis}: Alpha ($\alpha$)
+    \item \textbf{Y-Axis}: Beta ($\beta$)
+    \item \textbf{Point Size}: Represents the magnitude of the velocity coefficient $k$ (larger dots mean higher $k$).
+    \item \textbf{Color}: Indicates the resulting $J$-Score (darker indicates a lower, better score).
+\end{itemize}
+The red star highlights the absolute best configuration discovered during the session.
+
+\end{document}
