@@ -1,0 +1,169 @@
+\documentclass[12pt, a4paper]{report}
+
+% --- Official Margins (PST Guidelines: Left 4.0cm, Top/Bottom/Right 2.5cm) ---
+\usepackage[left=4.0cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+
+% --- Font & Line Spacing ---
+\usepackage{times}          % Times New Roman
+\usepackage{setspace}
+\onehalfspacing             % 1.5 line spacing
+
+% --- Paragraph Spacing & No Indentation ---
+\usepackage{parskip}
+
+% --- Mathematical & Graphic Packages ---
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{shapes.multipart, shapes.geometric, arrows.meta, positioning, calc}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{tabularx}
+\usepackage{titlesec}
+
+% Define custom column types for tabularx
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+
+% Format chapter titles to be large and centered (not excessively huge)
+\titleformat{\chapter}[display]
+  {\normalfont\large\bfseries\centering}
+  {\MakeUppercase{\chaptertitlename}\ \thechapter}
+  {0.5ex}
+  {\large}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+% Format numberless chapters (preliminary pages, references, appendices)
+\titleformat{name=\chapter,numberless}[block]
+  {\normalfont\large\bfseries\centering}
+  {}
+  {0pt}
+  {\large}
+\titlespacing*{name=\chapter,numberless}{0pt}{-20pt}{20pt}
+
+% Format section titles (consistent size)
+\titleformat{\section}
+  {\normalfont\large\bfseries}
+  {\thesection}
+  {1em}
+  {}
+\titlespacing*{\section}{0pt}{3.5ex plus 1ex minus .2ex}{2.3ex plus .2ex}
+
+% Format subsection titles (smaller size)
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsection}
+  {1em}
+  {}
+\titlespacing*{\subsection}{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\ttfamily\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+
+% --- Header & Footer (Page Numbering Bottom Right) ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{
+    \fancyhf{}
+    \rfoot{\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+}
+
+% --- Hyperlink Settings ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+\begin{document}
+
+% ==========================================
+% PRELIMINARY PAGES (Roman Numerals: i, ii, iii...)
+% ==========================================
+\pagenumbering{roman}
+
+% Page i: Title Page
+\input{preliminaries/title}
+
+% Page ii: Declaration
+\input{preliminaries/declaration}
+
+% Page iii: Certification of Approval
+\input{preliminaries/approval}
+
+% Page iv: Acknowledgement
+\input{preliminaries/acknowledgement}
+
+% Page v: Abstract
+\input{preliminaries/abstract}
+
+% Page vi: Table of Contents
+\addcontentsline{toc}{chapter}{CONTENTS}
+\tableofcontents
+
+% Page viii: List of Figures
+\addcontentsline{toc}{chapter}{LIST OF FIGURES}
+\listoffigures
+
+% Page ix: List of Tables
+\addcontentsline{toc}{chapter}{LIST OF TABLES}
+\listoftables
+
+% Page x: List of Abbreviations and Symbols
+\input{preliminaries/abbreviations}
+
+% ==========================================
+% BODY OF DISSERTATION (Arabic Numerals: 1, 2, 3...)
+% ==========================================
+\newpage
+\pagenumbering{arabic}
+
+% Chapters will be included here as we build them:
+\include{chapters/chapter1_introduction}
+\include{chapters/chapter2_literature}
+\include{chapters/chapter3_methodology}
+\include{chapters/chapter4_results}
+\include{chapters/chapter5_conclusion}
+
+\newpage
+\addcontentsline{toc}{chapter}{REFERENCES}
+\bibliographystyle{plain}
+\bibliography{references}
+
+\include{appendices/appendices}
+
+\end{document}

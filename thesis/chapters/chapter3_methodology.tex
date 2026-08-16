@@ -1,0 +1,406 @@
+\chapter{METHODOLOGY}
+
+\section{Introduction}
+This chapter describes the research design, mathematical formulations, and 
+experimental setup utilized to implement and evaluate the proposed 
+workload-aware dynamic array growth algorithm. To systematically develop an 
+adaptive resizing framework, we constructed a custom Python-based benchmarking 
+simulation environment that models different data ingestion patterns. 
+
+The research is organized into four progressive phases: (i) mathematical 
+formulation of the adaptive growth functions, (ii) simulator design and workload 
+generation, (iii) parameter optimization using Grid Search and Bayesian 
+Optimization, and (iv) performance evaluation against static industry baselines. 
+By measuring memory waste, element copying overhead, and execution times, we 
+quantify the efficiency of the proposed algorithms under identical, controlled 
+workloads of up to $10^7$ sequential insertions.
+
+\section{Materials}
+The implementation and empirical evaluations were conducted in a standardized 
+software and hardware environment to ensure reproducibility and consistency 
+across all test trials.
+
+\subsection{Software Environment}
+The simulation engine was developed in \textbf{Python 3.11.4 (64-bit)}. Python 
+was selected due to its rapid prototyping capabilities, high-level memory 
+management abstractions, and the availability of scientific computing libraries. 
+The core packages used in this research include:
+\begin{itemize}
+    \item \textbf{Scikit-Optimize (\texttt{skopt} v0.9.0):} Used for implementing 
+    the Gaussian Process (GP) Bayesian Optimization framework. Specifically, the 
+    \texttt{gp\_minimize} function was utilized to find the optimal hyper-parameters 
+    for the growth algorithms.
+    \item \textbf{NumPy (\texttt{numpy} v1.24.3):} Employed for fast numerical array 
+    operations and generating synthetic workloads (such as sinusoidal and random 
+    burst velocities).
+    \item \textbf{Matplotlib (\texttt{matplotlib} v3.7.1):} Used to visualize 
+    parameter sensitivity curves, convergence traces, and relative performance 
+    histograms.
+\end{itemize}
+
+\subsection{Hardware Environment}
+All benchmarks, grid sweeps, and Bayesian optimization loops were executed on 
+a single, dedicated workstation with the following hardware specifications to 
+prevent CPU throttling and external measurement noise:
+\begin{itemize}
+    \item \textbf{CPU:} Intel Core i5-11400F @ 2.60GHz (6 Cores, 12 Threads, 12MB Cache)
+    \item \textbf{RAM:} 16GB DDR4 @ 3200MHz
+    \item \textbf{Operating System:} Windows 10 Pro (64-bit)
+    \item \textbf{Storage:} 512GB NVMe M.2 SSD
+\end{itemize}
+To ensure time-measurement accuracy, all background processes were disabled during 
+benchmarking, and execution times were captured using the high-resolution 
+monotonic clock interface (\texttt{time.perf\_counter()}) which provides 
+nanosecond-level precision.
+
+\section{Research Design}
+
+\subsection{Mathematical Formulations of Growth Families}
+To systematically analyze adaptive resizing, we formulated four distinct 
+growth families, each introducing progressive degrees of workload awareness. 
+To prevent mathematical collapse (such as growth factors falling below 1.0 or 
+climbing to values that trigger memory overflow), all growth factors are 
+strictly clamped using a bounding function:
+\begin{equation}
+    g_{\text{clamped}}(k, v) = \min\left(g_{\max}, \max\left(g_{\min}, g(k, v)\right)\right)
+\end{equation}
+where $g_{\min} = 1.1$ and $g_{\max} = 2.0$ represent the lower and upper guard 
+rails, respectively.
+
+\subsubsection{Formula Family A: Logarithmic Decay}
+Formula A models the growth factor as a decaying logarithmic function of the 
+array's capacity. The core theory is that as the array size increases, the 
+absolute amount of memory wasted grows exponentially under fixed geometric 
+expansion. To counter this, the growth factor decays logarithmically.
+\begin{itemize}
+    \item \textbf{Phase 1 (Static Logarithmic Growth):}
+    \begin{equation}
+        g_A(C_{\text{old}}) = 1 + \frac{\alpha}{\ln(C_{\text{old}} + \beta)}
+    \end{equation}
+    where $C_{\text{old}}$ is the current array capacity, $\alpha$ is a scaling 
+    coefficient, and $\beta$ is a shifting factor that prevents division by zero.
+    \item \textbf{Phase 2 (Workload-Aware Logarithmic Growth):}
+    \begin{equation}
+        g_A(C_{\text{old}}, v) = 1 + \frac{\alpha + \lambda \ln(1 + v)}{\ln(C_{\text{old}} + \beta)}
+    \end{equation}
+    where $v$ is the insertion velocity, and $\lambda$ is a weight scaling the 
+    influence of velocity on array expansion.
+\end{itemize}
+
+\subsubsection{Formula Family B: Harmonic Decay}
+Formula B models the growth factor as a function of the resize iteration history, 
+denoted as $k$. As the array undergoes more resizes, the growth factor decays 
+following the harmonic series:
+\begin{itemize}
+    \item \textbf{Phase 1 (Static Harmonic Growth):}
+    \begin{equation}
+        g_B(k) = 1 + \frac{c_0}{k}
+    \end{equation}
+    where $k$ is the current resize count ($k = 1, 2, 3...$) and $c_0$ is the 
+    base growth multiplier.
+    \item \textbf{Phase 2 (Workload-Aware Harmonic Growth):}
+    \begin{equation}
+        g_B(k, v) = 1 + \frac{c_0 + \lambda \ln(1 + v)}{k}
+    \end{equation}
+    where $c_0$ controls the baseline expansion rate, and $\lambda \ln(1+v)$ 
+    adjusts the expansion dynamically based on the log-velocity of data 
+    ingestion.
+\end{itemize}
+
+\subsubsection{Formula Family C: Manual Hybrid Framework}
+Formula C is a manual linear combination of the logarithmic (Formula A) and 
+harmonic (Formula B) designs. It attempts to merge the capacity-dependent decay 
+of Formula A with the step-wise decay of Formula B using static weights:
+\begin{equation}
+    g_C(k, v, C_{\text{old}}) = w_A \cdot g_A(C_{\text{old}}, v) + (1 - w_A) \cdot g_B(k, v)
+\end{equation}
+where $w_A \in [0.0, 1.0]$ is a manually assigned weight defining the balance 
+between the two models.
+
+\subsubsection{Formula Family D: GP-Optimized Hybrid Framework}
+Formula D represents the generalized workload-aware harmonic expansion model. 
+Unlike Formula C, which manually blends two distinct structures, Formula D 
+focuses strictly on the harmonic formulation (which proved superior in baseline 
+trials) but subjects all hyper-parameters to automated Gaussian Process (GP) 
+Bayesian Optimization:
+\begin{equation}
+    g_D(k, v) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{c_0 + \lambda \ln(1 + v)}{k}\right)\right)
+\end{equation}
+Here, the parameters $c_0$ and $\lambda$ are optimized globally to minimize the 
+unified cost score $J$ across mixed workloads.
+
+\section{Data Collection}
+
+\subsection{Workload Ingestion Profiles}
+To test the adaptability of the algorithms, we designed seven distinct workload 
+profiles that simulate realistic ingestion patterns:
+\begin{enumerate}
+    \item \textbf{Uniform Workload:} Elements are inserted at a constant, steady 
+    rate. This represents standard static streaming. Mathematically, the 
+    number of elements $N(t)$ at time step $t$ is expressed as:
+    \begin{equation}
+        N(t) = \text{round}(C_{\text{uniform}} \cdot t)
+    \end{equation}
+    where $C_{\text{uniform}}$ is the constant insertion rate.
+    \item \textbf{Bursty Workload (Spike Ingestion):} Alternating cycles of 
+    extended inactivity and extremely rapid, high-volume element appends. The 
+    insertion rate oscillates between zero and a peak value:
+    \begin{equation}
+        N'(t) = \begin{cases} 
+            V_{\text{burst}} & \text{if } t \pmod{T_{\text{period}}} < T_{\text{active}} \\
+            0 & \text{otherwise}
+        \end{cases}
+    \end{equation}
+    where $T_{\text{period}}$ is the workload period and $T_{\text{active}}$ is the 
+    duration of the active burst phase.
+    \item \textbf{Mixed Workload:} A combination of uniform phases and burst phases 
+    to replicate complex runtime environments.
+    \item \textbf{Increasing Workload:} The rate of element insertion increases 
+    exponentially over time. The cumulative element count $N(t)$ is defined as:
+    \begin{equation}
+        N(t) = N_0 \cdot e^{r \cdot t}
+    \end{equation}
+    where $N_0$ is the initial insert count and $r$ is the growth rate constant.
+    \item \textbf{Decreasing Workload:} A high initial insertion rate that 
+    tapers off to a slow trickle. The cumulative element count $N(t)$ is defined as:
+    \begin{equation}
+        N(t) = N_{\max} \cdot \left(1 - e^{-r \cdot t}\right)
+    \end{equation}
+    where $N_{\max}$ is the asymptotic upper limit of the array size.
+    \item \textbf{Sinusoidal Workload:} Ingestion rate oscillates periodically, 
+    representing cyclical traffic (e.g., daytime vs. nighttime loads). The instantaneous 
+    rate is:
+    \begin{equation}
+        N'(t) = A \cdot \sin\left(\frac{2\pi}{T} \cdot t\right) + B
+    \end{equation}
+    where $A$ is the amplitude, $T$ is the cycle period, and $B$ is the baseline rate.
+    \item \textbf{Step Workload:} Abrupt shifts in insertion rates, changing 
+    from one steady state to another.
+\end{enumerate}
+
+\subsection{Insertion Velocity Metric}
+The insertion velocity $v$ is calculated dynamically during each insertion 
+cycle. When size reaches capacity, the instantaneous velocity is calculated 
+before triggering reallocation:
+\begin{equation}
+    v = \frac{\Delta N}{\Delta t + \epsilon}
+\end{equation}
+where $\Delta N$ is the number of elements inserted since the last resize event 
+(which is always equal to $C_{\text{old}} - C_{\text{prev\_old}}$), and $\Delta t$ 
+is the elapsed wall-clock time between the previous resize and the current 
+resize. The small regularization constant $\epsilon = 10^{-9}$ is added to 
+prevent division-by-zero errors in ultra-fast environments.
+
+\section{Data Analysis: The Unified J-Score}
+To evaluate and compare configurations, we developed a multi-objective cost 
+function, the $J$-Score. Because minimizing memory waste often increases 
+element copies, and vice-versa, a single scalar score is required to find the 
+mathematical Pareto-optimum. The unified objective function is defined as:
+\begin{equation}
+    J = w_{\text{waste}} \cdot \overline{W} + w_{\text{copies}} \cdot \overline{C_{\text{copy}}} + w_{\text{time}} \cdot \overline{T}
+\end{equation}
+Specifically, the weights were set to prioritize memory efficiency and 
+computational copying overhead equally, with execution time serving as a 
+tertiary constraint:
+\begin{equation}
+    J = 0.4 \cdot \overline{W} + 0.4 \cdot \overline{C_{\text{copy}}} + 0.2 \cdot \overline{T}
+\end{equation}
+Here, the components are normalized ratios:
+\begin{itemize}
+    \item $\overline{W}$ is the normalized memory waste ratio, calculated as 
+    the wasted capacity at the end of the workload divided by the final capacity.
+    \item $\overline{C_{\text{copy}}}$ is the normalized cumulative element copies 
+    relative to a worst-case baseline policy.
+    \item $\overline{T}$ is the normalized total execution time relative to the 
+    fixed $2.0\times$ baseline.
+\end{itemize}
+A lower $J$-Score indicates a more efficient growth strategy.
+
+\section{Implementation}
+
+\subsection{Simulator Engine Architecture}
+The benchmarking simulator mimics a contiguous dynamic array. It maintains a 
+virtual contiguous address space, an active size, and an active capacity. When 
+elements are appended, the simulator increases the size. If the size exceeds 
+capacity, it queries the growth engine, evaluates the current velocity $v$ and 
+resize counter $k$, computes the new capacity $C_{\text{new}} = \lfloor C_{\text{old}} \times g(k,v) \rfloor$, 
+allocates new virtual memory, copies the old elements, and frees the previous 
+allocation.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    block/.style={draw, fill=blue!10, rectangle, minimum width=2.5cm, minimum height=1.0cm, align=center, font=\small},
+    decision/.style={draw, fill=yellow!15, diamond, minimum width=2.5cm, minimum height=2.0cm, align=center, font=\small},
+    io/.style={draw, fill=green!10, trapezium, trapezium left angle=70, trapezium right angle=110, minimum width=2cm, minimum height=1cm, align=center, font=\small},
+    arrow/.style={-Stealth, thick}
+]
+    % Nodes
+    \node[io] (start) {Initialize Array \\ $C_0 = 10, k = 0, \text{Size} = 0$};
+    \node[block, below=0.8cm of start] (insert) {Insert Element \\ from Workload Pattern};
+    \node[decision, below=0.8cm of insert] (check) {Is Array \\ Full? \\ $\text{Size} = C_{\text{old}}$};
+    \node[block, right=1.5cm of check] (no_resize) {Increment Size \\ Continue Loop};
+    \node[block, below=0.8cm of check] (calc_v) {Calculate Velocity \\ $v = \frac{\Delta N}{\Delta t}$};
+    \node[block, below=0.8cm of calc_v] (calc_g) {Compute Clamped $g(k,v)$ \\ Formula A/B/C/D};
+    \node[block, below=0.8cm of calc_g] (resize) {Allocate $C_{\text{new}} = \lfloor C_{\text{old}} g \rfloor$ \\ Copy Elements, Free Old \\ Increment $k$};
+    \node[decision, below=0.8cm of resize] (done) {Workload \\ Completed?};
+    \node[io, below=0.8cm of done] (end) {Return Logged \\ Metrics (J-Score)};
+
+    % Arrows
+    \draw[arrow] (start) -- (insert);
+    \draw[arrow] (insert) -- (check);
+    \draw[arrow] (check) -- node[above] {No} (no_resize);
+    \draw[arrow] (no_resize) |- (insert);
+    \draw[arrow] (check) -- node[left] {Yes} (calc_v);
+    \draw[arrow] (calc_v) -- (calc_g);
+    \draw[arrow] (calc_g) -- (resize);
+    \draw[arrow] (resize) -- (done);
+    \draw[arrow] (done) -- node[left] {Yes} (end);
+    \draw[arrow] (done.west) -- node[below] {No} ++(-1.5,0) |- (insert.west);
+\end{tikzpicture}
+\caption{System Architecture Flowchart of the Resizing Simulator Engine}
+\label{fig:simulator_flowchart}
+\end{figure}
+
+\subsection{Python Simulator Implementation Listing}
+To provide absolute clarity on the simulator's computational layout, Listing 
+3.1 presents the core implementation of the \texttt{AdaptiveDynamicArray} engine, 
+capturing the velocity calculations and metric tracking during execution.
+
+\begin{lstlisting}[language=Python, caption={Core Implementation of the Adaptive Dynamic Array Simulator}, label={lst:simulator_code}]
+import time
+import math
+
+class AdaptiveDynamicArray:
+    def __init__(self, growth_formula_fn, initial_capacity=10):
+        self.capacity = initial_capacity
+        self.size = 0
+        self.resize_count = 0
+        self.elements_copied = 0
+        
+        # Velocity tracking states
+        self.last_resize_time = time.perf_counter()
+        self.last_resize_size = 0
+        
+        # Growth factor function hook
+        self.growth_formula = growth_formula_fn
+        
+    def append(self, element):
+        if self.size >= self.capacity:
+            self._resize()
+        self.size += 1
+
+    def _resize(self):
+        current_time = time.perf_counter()
+        delta_t = current_time - self.last_resize_time
+        delta_n = self.size - self.last_resize_size
+        
+        # Compute velocity (v = delta_n / delta_t)
+        velocity = delta_n / (delta_t + 1e-9)
+        self.resize_count += 1
+        
+        # Query growth factor
+        g = self.growth_formula(self.resize_count, velocity, self.capacity)
+        
+        # Clamping to guard rails (1.1x - 2.0x)
+        g = min(2.0, max(1.1, g))
+        
+        # Compute new capacity
+        new_capacity = math.floor(self.capacity * g)
+        
+        # Track metric outputs
+        self.elements_copied += self.size
+        self.capacity = new_capacity
+        
+        # Reset velocity trackers
+        self.last_resize_time = time.perf_counter()
+        self.last_resize_size = self.size
+\end{lstlisting}
+
+\section{Evaluation}
+
+\subsection{Grid Search Sweep}
+To map the parameter space and establish initial performance baselines, a grid 
+search sweep was conducted for Formulas A, B, and C.
+\begin{itemize}
+    \item \textbf{Formula A Sweep:} $\alpha$ was swept from $0.5$ to $5.0$ with a 
+    step of $0.5$, and $\beta$ was swept from $2$ to $20$ with a step of $2$.
+    \item \textbf{Formula B Sweep:} $c_0$ was swept from $0.5$ to $4.0$ with a step 
+    of $0.5$, and $\lambda$ was swept from $0.0$ to $5.0$ with a step of $0.5$.
+    \item \textbf{Formula C Weight Sweep:} The weight $w_A$ was swept from $0.0$ to 
+    $1.0$ with a step of $0.1$.
+\end{itemize}
+Each configuration was executed across 10 independent trials for all 7 workloads, 
+generating a total of 15,400 benchmark runs.
+
+\subsection{Gaussian Process Bayesian Optimization Setup}
+To locate the global Pareto-optimal parameters for Formula D, we utilized 
+Bayesian Optimization using Gaussian Process regression as the surrogate model. 
+Bayesian Optimization is suited for optimizing expensive, black-box functions 
+by building a probabilistic model of the objective function and using an 
+acquisition function to determine where to sample next.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.5cm and 1.5cm,
+    block/.style={draw, fill=blue!10, rectangle, minimum width=2.5cm, minimum height=1.0cm, align=center, font=\small},
+    arrow/.style={-Stealth, thick}
+]
+    % Nodes
+    \node[block] (param) {Select Parameters \\ $(c_0, \lambda)$};
+    \node[block, right=of param] (sim) {Run Simulator \\ mixed workload};
+    \node[block, right=of sim] (jscore) {Evaluate $J$-Score \\ Cost Output};
+    \node[block, below=of jscore] (gp) {Update Gaussian Process \\ Surrogate Model};
+    \node[block, left=of gp] (acq) {Evaluate Acquisition \\ Function (EI)};
+    
+    % Connections
+    \draw[arrow] (param) -- (sim);
+    \draw[arrow] (sim) -- (jscore);
+    \draw[arrow] (jscore) -- (gp);
+    \draw[arrow] (gp) -- (acq);
+    \draw[arrow] (acq) |- ($(param.south) + (0,-0.5)$) -| (param);
+\end{tikzpicture}
+\caption{The Gaussian Process Bayesian Optimization Feedback Loop}
+\label{fig:bo_feedback_loop}
+\end{figure}
+
+The optimization space was bounded as follows:
+\begin{equation}
+    c_0 \in [0.1, 5.0], \quad \lambda \in [0.0, 10.0]
+\end{equation}
+The objective function to minimize was the composite $J$-Score evaluated under 
+the $10^7$ element mixed workload. The acquisition function utilized was the 
+\textit{Expected Improvement} (EI):
+\begin{equation}
+    \text{EI}(x) = \mathbb{E} \left[ \max(0, J(x^+) - J(x)) \right]
+\end{equation}
+where $x^+$ is the location of the current minimum $J$-Score. 
+
+The Gaussian Process regression modeling utilized a Matern $5/2$ covariance 
+kernel function, which is defined as:
+\begin{equation}
+    K(d) = \sigma^2 \left( 1 + \frac{\sqrt{5}d}{\ell} + \frac{5d^2}{3\ell^2} \right) \exp\left(-\frac{\sqrt{5}d}{\ell}\right)
+\end{equation}
+where $d = ||x - x'||$ represents the Euclidean distance in hyper-parameter space, 
+$\sigma^2$ is the output variance scaling factor, and $\ell$ is the characteristic 
+length-scale parameter. The optimization loop was run for $50$ iterations: the first 
+$10$ iterations used random initialization to map the surrogate space, followed by 
+$40$ sequential guide iterations.
+
+\section{Summary for the Chapter}
+This chapter detailed the methodology used to model, implement, and evaluate 
+the proposed workload-aware dynamic array growth algorithms. Section 3.2 
+presented the software (Python 3.11, NumPy, Scikit-Optimize) and hardware 
+specifications of the benchmarking system. Section 3.3 detailed the mathematical 
+formulations of the Logarithmic (A), Harmonic (B), Manual Hybrid (C), and 
+GP-Optimized Hybrid (D) frameworks, and explained the clamping mechanisms. Section 
+3.4 described the 7 synthetic workload profiles, including their exact mathematical 
+models, and detailed the velocity metric calculation. Section 3.5 formulated the 
+unified multi-objective $J$-Score, weighing memory waste, copying overhead, and 
+execution time. Section 3.6 illustrated the simulator's architectural flowchart 
+using TikZ and presented the core Python code listing for the simulator engine. 
+Section 3.7 detailed the Grid Search and Gaussian Process Bayesian Optimization 
+procedures, including the Matern covariance kernel and acquisition functions, 
+visualized via a feedback loop diagram. The empirical results obtained using this 
+methodology are presented and analyzed in the next chapter.

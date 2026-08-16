@@ -1,0 +1,207 @@
+\chapter{LITERATURE REVIEW}
+
+\section{Introduction}
+The evolution of dynamic data structures is a cornerstone of modern software 
+engineering, fundamentally dictating how applications allocate, manage, and 
+process memory at runtime. Dynamic arrays, owing to their contiguous memory 
+layout and $O(1)$ random access, are among the most heavily utilized structures 
+across computational domains. However, standardizing their resizing policies 
+has historically involved rigid compromises between spatial efficiency (memory 
+utilization) and temporal efficiency (computational overhead). 
+
+This chapter critically examines the existing body of literature surrounding 
+memory allocation, algorithmic complexity, optimal resizable arrays, and 
+adaptive data structures. Section 2.2 reviews existing implementations of 
+resizable arrays in programming languages and theoretical works from key 
+researchers such as Brodnik, Sartor, and Bille. Section 2.3 identifies the 
+research gaps, focusing on the lack of workload-aware and velocity-sensitive 
+dynamic growth algorithms. Finally, Section 2.4 summarizes the key findings of 
+the literature review.
+
+\section{Existing Works}
+
+\subsection{Standard Language Implementations (C++, Java, CPython)}
+Dynamic arrays are standard components in the standard libraries of most 
+mainstream programming languages. C++'s \texttt{std::vector}, Java's 
+\texttt{ArrayList}, and Python's \texttt{list} all implement dynamic arrays, but 
+they utilize different growth strategies that reflect varying design philosophies.
+
+In the C++ Standard Template Library (STL), \texttt{std::vector} typically uses 
+a growth factor of $g = 2.0$ in common implementations (such as GCC's libstdc++ 
+and MSVC). When the vector is full, its capacity is doubled. This aggressive 
+doubling ensures that the frequency of reallocation remains very low, which is 
+highly desirable in performance-critical system programming. However, a growth 
+factor of $2.0$ has severe memory implications. In the worst-case scenario, the 
+vector can waste up to $50\%$ of its allocated memory. Mathematically, the 
+space overhead is bounded by $O(N)$ where $N$ is the size of the array. Furthermore, 
+a growth factor of $2.0$ prevents the reuse of previously deallocated memory 
+blocks. Because the new capacity ($C_{\text{new}} = 2 C_{\text{old}}$) is always 
+greater than the sum of all previous allocations ($C_0 + C_1 + ... + C_{k-1}$), 
+the allocator cannot reuse the contiguous blocks that were recently freed, 
+forcing the operating system to continuously locate new blocks higher up in the 
+virtual memory address space.
+
+Java's \texttt{ArrayList} utilizes a more conservative growth factor of $g = 1.5$. 
+The new capacity is calculated as:
+\begin{equation}
+    C_{\text{new}} = C_{\text{old}} + (C_{\text{old}} \gg 1)
+\end{equation}
+By growing by $1.5\times$ instead of doubling, Java reduces the worst-case 
+memory waste to $33.3\%$. Furthermore, a growth factor of $1.5$ theoretically 
+allows for the reuse of previously freed memory blocks after a few reallocations, 
+improving memory compaction. However, this savings in space comes at the price 
+of time: a $1.5\times$ growth policy increases the number of reallocations 
+and elements copied by approximately $1.7\times$ compared to a doubling policy, 
+increasing garbage collection pressure and computational latency \cite{java_data_structures}.
+
+CPython, the reference implementation of Python, implements its \texttt{list} 
+structure using a highly conservative, size-dependent non-geometric growth 
+factor. The allocation formula is designed to provide rapid growth for very small 
+lists, and conservative growth for larger lists to conserve memory:
+\begin{equation}
+    C_{\text{new}} = C_{\text{old}} + (C_{\text{old}} \gg 3) + (C_{\text{old}} < 9 ? 3 : 6)
+\end{equation}
+For large arrays, the term $(C_{\text{old}} \gg 3)$ dominates, resulting in an 
+asymptotic growth factor of $1.125$ ($1 \frac{1}{8}$). This highly conservative 
+policy ensures that CPython lists waste very little memory (around $11.1\%$ 
+asymptotically). However, the trade-off is a massive increase in reallocation 
+frequency. For large scale data insertions, a growth factor of $1.125$ causes 
+continuous memory reallocation and copying. In resource-constrained systems or 
+high-performance computing, the CPU time spent in CPython's allocator during 
+list appends represents a major bottleneck.
+
+\subsection{Theoretical Work on Resizable Arrays}
+To address the time-space trade-offs of simple geometric expansion, several 
+researchers have proposed theoretical architectures for resizable arrays to analyze 
+their asymptotic limits \cite{time_space_complexity}. 
+
+Brodnik et al. \cite{optimal_resizable} proposed a landmark data structure 
+representing an optimal resizable array. They proved that it is possible to 
+maintain a resizable array that wastes only $O(\sqrt{N})$ space, while still 
+maintaining $O(1)$ worst-case time complexity for lookups and insertions. Their 
+design achieves this by dividing the array into a series of blocks of 
+exponentially increasing sizes. Instead of maintaining a single contiguous block, 
+the structure maintains a directory of pointers to blocks of size $2^{\lfloor i/2 \rfloor}$. 
+While this theoretical design solves the geometric waste issue ($O(\sqrt{N})$ 
+wasted space is asymptotically much smaller than $O(N)$), it introduces a level 
+of indirection. Every lookup requires resolving a pointer through the directory, 
+which bypasses the hardware prefetcher and causes L1/L2 cache misses, making the 
+raw lookup speed significantly slower than a standard contiguous array.
+
+Sartor \cite{memory_allocation} analyzed the memory allocation behaviors of 
+dynamic arrays in virtual memory systems. Sartor highlighted that the virtual memory 
+allocator's page size (typically 4KB) plays a crucial role in actual memory waste. 
+If a dynamic array requests an allocation that does not align with page boundaries, 
+the operating system allocates a whole page anyway, resulting in hidden 
+fragmentation. Sartor proposed that array growth factors should align with 
+underlying memory pages, suggesting that resizing algorithms should be aware of 
+allocator-level metrics. However, Sartor's models remained static and did not 
+adapt to runtime ingestion velocity.
+
+Bille et al. \cite{resizable_optimal_time_space} extended the theoretical bounds 
+of resizable arrays to parallel and concurrent environments. They proposed 
+algorithms that achieve optimal space-time trade-offs under dynamic updates 
+by amortizing the copying overhead across multiple threads. Similarly, research 
+into extendible arrays \cite{allocating_storage, managing_storage} in database 
+systems focused on managing secondary storage allocations. These works utilized 
+index structures to coordinate multidimensional array growth, ensuring that 
+data could be appended along multiple axes without copying the entire database. 
+However, the mathematical and structural overhead of managing these index 
+tables makes them impractical for standard, general-purpose programming 
+languages where low latency and fast memory cache-locality are the highest 
+priorities \cite{fast_array}.
+
+\subsection{Specialized and Adaptive Memory Structures}
+Another class of related work focuses on adaptive memory structures. The Adaptive 
+Packed Memory Array (APMA) \cite{adaptive_packed} is a prime example. The APMA 
+is designed to maintain sorted order among elements while allowing rapid 
+insertions and deletions. It dynamically adjusts the density thresholds (packed 
+fractions) in different segments of the array to control memory fragmentation 
+and minimize element movements. While the APMA is highly adaptive, its design 
+is optimized for maintaining sorted lists, which requires maintaining empty 
+``gaps'' between elements. This is fundamentally different from a standard 
+sequential dynamic array where elements are appended contiguously.
+
+Additionally, researchers in signal processing have explored adaptive filtering and 
+array processing algorithms \cite{trends_adaptive}. These systems adaptively 
+tune filter coefficients based on input signal rates. While the domain is 
+different, the concept of utilizing feedback loops (such as Kalman filters or 
+recursive least squares) to adjust algorithmic parameters in real time serves 
+as a conceptual inspiration for our workload-aware resizing algorithm.
+
+Other specialized data structures, such as the Black-White Array \cite{black_white_array} 
+and Z-rays \cite{z_rays}, focus on reducing the copying cost of dynamic arrays 
+by using a dual-buffer system or virtual memory remapping. The Black-White 
+Array splits the array into two segments to allow parallel insertions at both 
+ends, while Z-rays utilize virtual memory page table manipulation to expand 
+arrays without physically copying data. While remapping pages in virtual memory 
+is highly efficient for extremely large arrays, it requires direct interaction 
+with the operating system's kernel and is slow for small arrays due to system 
+call overhead.
+
+Furthermore, alternative designs include logarithmic architectures that scale 
+the growth factor logarithmically to prevent large-scale overallocation at 
+high capacities \cite{logarithmic_arrays}. For concurrent and persistent 
+scenarios, lock-free vectors \cite{lock_free_vector} and fully persistent 
+arrays \cite{persistent_arrays} allow threads to access historical versions 
+of the array without copying data. For database query execution, 
+block-structured arrays specialized for query processing 
+\cite{query_processing} eliminate contiguous reallocations entirely.
+
+\section{Research Gap}
+Despite the extensive literature on resizable arrays, a significant research gap 
+remains at the intersection of practical contiguous arrays and runtime 
+adaptability. The existing work is sharply divided into two paradigms:
+\begin{enumerate}
+    \item \textbf{Rigid Contiguous Arrays:} The standard implementations (C++, Java, 
+    Python) maintain a strictly contiguous block of memory to guarantee raw 
+    $O(1)$ CPU-cache-efficient lookup speeds, but they rely on static growth 
+    factors ($2.0\times$, $1.5\times$, $1.125\times$) that completely ignore the 
+    nature of the workload.
+    \item \textbf{Complex Non-Contiguous Structures:} Theoretical designs (e.g., 
+    Brodnik's segmented arrays, packed memory arrays, virtual page remappers) 
+    achieve better theoretical space bounds, but they destroy cache locality 
+    due to pointer indirection, require kernel-level support, or add massive 
+    CPU overhead for index calculations.
+\end{enumerate}
+
+Specifically, no existing contiguous dynamic array resizing algorithm incorporates:
+\begin{itemize}
+    \item \textbf{Workload-Aware Insertion Velocity ($v$):} Current systems 
+    do not observe how fast elements are being appended. A fast, high-velocity 
+    stream of data indicates an ongoing burst, which requires a large growth 
+    factor to minimize frequent reallocations. A slow, trickle-like insertion 
+    suggests that the process may be ending, requiring a conservative growth 
+    factor to prevent leaving large amounts of memory unused.
+    \item \textbf{Resize History Decoupling ($k$):} Although Python's resizing 
+    has some size dependency, it does not decay the growth factor smoothly as 
+    a function of the resize iteration $k$. As an array grows larger, the cost 
+    of a resize grows linearly, making the penalty of overallocation increasingly 
+    severe. None of the standard implementations decay the growth factor 
+    harmonically to prevent massive absolute memory waste at scale.
+    \item \textbf{Multi-Objective Parameter Optimization:} The parameters 
+    of existing growth algorithms are chosen using heuristic rules-of-thumb 
+    (e.g., doubling because it is simple). There has been no systematic attempt 
+    to define a unified objective function $J$ that penalizes memory waste, 
+    element copying, and runtime execution time, and to optimize this function 
+    using modern hyper-parameter tuning techniques like Bayesian Optimization.
+\end{itemize}
+
+This research directly addresses this gap by formulating a contiguous dynamic 
+array that maintains $O(1)$ random access, yet adaptively adjusts its growth 
+factor at runtime using a harmonic decay of resize history $k$, scaled by the 
+insertion velocity $v$.
+
+\section{Summary for the Chapter}
+This chapter reviewed the existing literature on resizable arrays, memory 
+allocation, and adaptive data structures. Section 2.2 analyzed standard dynamic 
+array implementations in mainstream programming languages (C++, Java, CPython), 
+highlighting the rigid trade-offs between memory waste and allocation frequency. 
+It also examined theoretical resizable array designs proposed by Brodnik, Sartor, 
+and Bille, noting that while they achieve better space complexity, their 
+pointer indirection degrades CPU cache performance. Section 2.3 identified a 
+critical research gap: the lack of a contiguous, general-purpose dynamic 
+array resizing algorithm that incorporates real-time insertion velocity and 
+resize history feedback to dynamically tune the growth factor. This gap 
+motivates the design of the workload-aware adaptive growth models detailed in 
+the next chapter.

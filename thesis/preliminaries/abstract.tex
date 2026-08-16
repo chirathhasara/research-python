@@ -1,0 +1,19 @@
+\chapter*{ABSTRACT}
+\addcontentsline{toc}{chapter}{ABSTRACT}
+
+\begin{center}
+{\bfseries A WORKLOAD-AWARE DYNAMIC ARRAY GROWTH ALGORITHM FOR EFFICIENT MEMORY ALLOCATION \par}
+\vspace{0.3cm}
+{\small P.M.D.C.H. Perera$^{1,*}$, A.M.C.M. Aruppola$^{1}$, C.H. Baduraliya$^{1}$ \par}
+\vspace{0.2cm}
+{\small\itshape $^{1}$Department of Physical Sciences and Technology, Faculty of Applied Sciences, Sabaragamuwa University of Sri Lanka, P.O. Box 02, Belihuloya, 70140, Sri Lanka \par}
+{\small $^{*}$chirathhasara2001@gmail.com \par}
+\end{center}
+
+\vspace{0.5cm}
+
+Dynamic arrays are fundamental data structures widely used in modern software for fast random access and dynamic memory allocation. Conventional implementations resize arrays using fixed growth factors (e.g., $1.5\times$ or $2.0\times$), compromising between memory utilization and resizing overhead. Though recent studies explore alternative array organizations to improve memory efficiency, the utilized resizing strategies remain workload-independent, with limited flexibility in adaptation to changes in insertion patterns. This study proposes an adaptive growth strategy combining resize history with runtime workload intensity. The proposed algorithm models the growth factor using a workload-aware harmonic function, $g(k,v) = \min(g_{\max}, \max(g_{\min}, 1 + \frac{c_0 + \lambda \ln(1+v)}{k}))$, where $k$ is the resize count and $v = \frac{\Delta N}{\Delta t}$ is insertion velocity ($\Delta N$ inserted elements per unit time $\Delta t$ between resizes). The resized capacity is $C_{\text{new}} = \lfloor C_{\text{old}} \times g(k,v) \rfloor$. Implemented in Python 3.11 (64-bit integers, initial capacity $C_0 = 10$, $c_0 = 2.0$, $\lambda = 1.0$, $g_{\min} = 1.1$, $g_{\max} = 2.0$), benchmarks were run on an Intel i5 Windows 10 workstation across 10 repeated trials. Evaluation spanned $10^4$--$10^7$ insertions across seven workload patterns (including uniform, burst, and mixed), comparing against fixed ($1.5\times$, $2.0\times$) and Python list ($1.125\times$) policies. This study aimed to identify an optimal configuration that minimized memory waste while maintaining high throughput and limiting element-copying overhead. Under a $10^7$ element mixed workload (10 trials), the proposed strategy achieved 1.28\% memory waste, 32 resizes, 38.76M copied elements, and 6.40M ops/s throughput. Comparatively, Fixed $2.0\times$ yielded 4.63\% waste (20 resizes, 10.49M copies), Fixed $1.5\times$ yielded 27.77\% waste (35 resizes, 27.69M copies), and Python list yielded 4.59\% waste (102 resizes, 83.84M copies). The proposed method significantly reduced memory waste compared to fixed and feedback-unaware baselines ($p < 0.01$) without sacrificing throughput. By combining resize history and workload awareness, the algorithm expands aggressively during burst insertions and adopts conservative growth during lighter workloads. Unlike static resizing policies, this work contributes a workload-sensitive adaptive resizing mechanism for memory-sensitive systems.
+
+\vspace{0.8cm}
+
+\noindent{\bfseries Keywords:} Dynamic arrays, Adaptive resizing, Harmonic growth, Workload-aware memory allocation, Dynamic memory management
