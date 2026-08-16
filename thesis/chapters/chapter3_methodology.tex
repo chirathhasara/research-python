@@ -51,7 +51,9 @@ prevent CPU throttling and external measurement noise:
 To ensure time-measurement accuracy, all background processes were disabled during 
 benchmarking, and execution times were captured using the high-resolution 
 monotonic clock interface (\texttt{time.perf\_counter()}) which provides 
-nanosecond-level precision.
+nanosecond-level precision. No explicit random seed was set in the simulator, 
+allowing standard pseudo-random number generator initialization based on default 
+system entropy.
 
 \section{Research Design}
 
@@ -118,16 +120,16 @@ where $w_A \in [0.0, 1.0]$ is a manually assigned weight defining the balance
 between the two models.
 
 \subsubsection{Formula Family D: GP-Optimized Hybrid Framework}
-Formula D represents the generalized workload-aware harmonic expansion model. 
-Unlike Formula C, which manually blends two distinct structures, Formula D 
-focuses strictly on the harmonic formulation (which proved superior in baseline 
-trials) but subjects all hyper-parameters to automated Gaussian Process (GP) 
-Bayesian Optimization:
+Formula D represents the automated, workload-aware hybrid expansion model. 
+Similar to Formula C, it blends the capacity-dependent logarithmic model with the 
+iteration-dependent harmonic model:
 \begin{equation}
-    g_D(k, v) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{c_0 + \lambda \ln(1 + v)}{k}\right)\right)
+    g_D(k, v, C_{\text{old}}) = 1 + w_A \left( \frac{\alpha_0 + \lambda \ln(1+v)}{\ln(C_{\text{old}} + \beta)} \right) + (1 - w_A) \left( \frac{c_0 + \lambda \ln(1+v)}{k} \right)
 \end{equation}
-Here, the parameters $c_0$ and $\lambda$ are optimized globally to minimize the 
-unified cost score $J$ across mixed workloads.
+Unlike Formula C, which uses manual parameter assignment, Formula D subjects the 
+key hyper-parameters—specifically the blend weight $w_A$ and the velocity scaling 
+parameter $\lambda$—to automated Gaussian Process (GP) Bayesian Optimization to 
+minimize the unified cost score $J$ under dynamic workloads.
 
 \section{Data Collection}
 
@@ -191,28 +193,39 @@ is the elapsed wall-clock time between the previous resize and the current
 resize. The small regularization constant $\epsilon = 10^{-9}$ is added to 
 prevent division-by-zero errors in ultra-fast environments.
 
-\section{Data Analysis: The Unified J-Score}
-To evaluate and compare configurations, we developed a multi-objective cost 
-function, the $J$-Score. Because minimizing memory waste often increases 
-element copies, and vice-versa, a single scalar score is required to find the 
-mathematical Pareto-optimum. The unified objective function is defined as:
+\section{Data Analysis: Performance Metrics and the J-Score}
+
+\subsection{Performance Metrics}
+To evaluate the dynamic array growth algorithms, we define five key performance metrics:
+\begin{enumerate}
+    \item \textbf{Memory Waste (\%):} The percentage of allocated array capacity that remains unused at the conclusion of the insertion workload.
+    \item \textbf{Number of Resizes:} The total count of reallocation events triggered throughout the insertion of elements.
+    \item \textbf{Total Elements Copied:} The cumulative sum of elements copied during all resize events:
+    \begin{equation}
+        C_{\text{copy}} = \sum_{i=1}^{k} C_i
+    \end{equation}
+    where $C_i$ is the number of elements copied during the $i$-th resize event, and $k$ is the total resize count.
+    \item \textbf{Throughput:} The average rate of element insertions, calculated as the total number of inserted elements divided by the total execution time (in seconds), expressed in operations per second (ops/s):
+    \begin{equation}
+        \text{Throughput} = \frac{N_{\text{final}}}{T_{\text{total}}}
+    \end{equation}
+    where $T_{\text{total}}$ is the total execution time.
+\end{enumerate}
+
+\subsection{The Unified J-Score}
+To compare different configurations, we developed a multi-objective cost function, the $J$-Score. Because minimizing memory waste often increases element copies, and vice-versa, a single scalar score is required to find the trade-off. The unified objective function is defined as:
 \begin{equation}
     J = w_{\text{waste}} \cdot \overline{W} + w_{\text{copies}} \cdot \overline{C_{\text{copy}}} + w_{\text{time}} \cdot \overline{T}
 \end{equation}
-Specifically, the weights were set to prioritize memory efficiency and 
-computational copying overhead equally, with execution time serving as a 
-tertiary constraint:
+Specifically, the weights are set to prioritize memory efficiency and copying overhead equally (40\% each) as they represent the core space-time trade-off, with execution time serving as a secondary constraint (20\%) to ensure that the computational complexity of the resizing formula itself does not degrade throughput:
 \begin{equation}
     J = 0.4 \cdot \overline{W} + 0.4 \cdot \overline{C_{\text{copy}}} + 0.2 \cdot \overline{T}
 \end{equation}
-Here, the components are normalized ratios:
+The components are normalized relative to standard baseline policies to keep them on the same scale:
 \begin{itemize}
-    \item $\overline{W}$ is the normalized memory waste ratio, calculated as 
-    the wasted capacity at the end of the workload divided by the final capacity.
-    \item $\overline{C_{\text{copy}}}$ is the normalized cumulative element copies 
-    relative to a worst-case baseline policy.
-    \item $\overline{T}$ is the normalized total execution time relative to the 
-    fixed $2.0\times$ baseline.
+    \item $\overline{W} = W / W_{\text{base}}$ is the normalized memory waste, where $W_{\text{base}}$ is the memory waste percentage of the standard Fixed $2.0\times$ baseline.
+    \item $\overline{C_{\text{copy}}} = C_{\text{copy}} / C_{\text{base}}$ is the normalized cumulative element copies, where $C_{\text{base}}$ is the total elements copied of the standard Python List baseline.
+    \item $\overline{T} = T / T_{\text{base}}$ is the normalized execution time, where $T_{\text{base}}$ is the maximum execution time of the standard Fixed $2.0\times$ or Python List baselines.
 \end{itemize}
 A lower $J$-Score indicates a more efficient growth strategy.
 
@@ -224,8 +237,11 @@ virtual contiguous address space, an active size, and an active capacity. When
 elements are appended, the simulator increases the size. If the size exceeds 
 capacity, it queries the growth engine, evaluates the current velocity $v$ and 
 resize counter $k$, computes the new capacity $C_{\text{new}} = \lfloor C_{\text{old}} \times g(k,v) \rfloor$, 
-allocates new virtual memory, copies the old elements, and frees the previous 
-allocation.
+simulates the allocation of a new memory block, records the element copying 
+overhead, and releases the simulated capacity of the previous block. This allows the 
+engine to track logical memory allocation and copying operations without directly 
+measuring physical OS RAM fragmentation, which is managed at runtime by Python's 
+virtual memory heap.
 
 \begin{figure}[H]
 \centering
@@ -348,7 +364,7 @@ acquisition function to determine where to sample next.
     arrow/.style={-Stealth, thick}
 ]
     % Nodes
-    \node[block] (param) {Select Parameters \\ $(c_0, \lambda)$};
+    \node[block] (param) {Select Parameters \\ $(w_A, \lambda)$};
     \node[block, right=of param] (sim) {Run Simulator \\ mixed workload};
     \node[block, right=of sim] (jscore) {Evaluate $J$-Score \\ Cost Output};
     \node[block, below=of jscore] (gp) {Update Gaussian Process \\ Surrogate Model};
@@ -367,7 +383,7 @@ acquisition function to determine where to sample next.
 
 The optimization space was bounded as follows:
 \begin{equation}
-    c_0 \in [0.1, 5.0], \quad \lambda \in [0.0, 10.0]
+    w_A \in [0.0, 1.0], \quad \lambda \in [0.1, 5.0]
 \end{equation}
 The objective function to minimize was the composite $J$-Score evaluated under 
 the $10^7$ element mixed workload. The acquisition function utilized was the 

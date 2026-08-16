@@ -44,7 +44,7 @@ reallocation to avoid future copying, it risks squandering valuable system
 memory, leading to internal fragmentation and potentially degrading system-wide 
 performance due to cache misses and swapping.
 
-Achieving an optimal balance between time efficiency (computational overhead) 
+Achieving an improved balance between time efficiency (computational overhead) 
 and space efficiency (memory waste) is the central challenge in designing 
 dynamic array growth algorithms. As software systems increasingly handle 
 unpredictable, bursty, and massive volumes of data, the need for intelligent, 
@@ -132,7 +132,7 @@ formula:
 which roughly equates to an asymptotic growth factor of approximately $1.125$ 
 for larger arrays.
 
-Mathematically, the amortized cost can be proved using the \textit{Accounting Method}. 
+Mathematically, the amortized cost can be shown using the \textit{Accounting Method}. 
 Let the cost of a regular insertion without resize be $1$ unit of work (the 
 actual write). Let the cost of copying an element during resize also be $1$ unit 
 of work. If we use a growth factor of $2.0$, we can charge each insertion a 
@@ -208,7 +208,7 @@ determined at runtime based on two primary feedback variables:
     the workload.
 \end{enumerate}
 
-To mathematically map these inputs to an optimal growth factor, this research 
+To mathematically map these inputs to an adaptive growth factor, this research 
 systematically explores and develops three progressive architectural frameworks:
 \begin{itemize}
     \item \textbf{Logarithmic Model (Formula A):} A model that dampens the growth 
@@ -230,14 +230,14 @@ systematically explores and develops three progressive architectural frameworks:
     scales back expansion as the array matures.
     
     \item \textbf{Hybrid Framework (Formula C \& D):} The culmination of the 
-    research, which synthesizes the strengths of both historical decay and 
-    velocity-based scaling. The hybrid framework models the growth factor using 
-    a workload-aware harmonic function: 
+    research, which synthesizes the strengths of both capacity-based logarithmic 
+    decay and iteration-based harmonic decay. The hybrid framework models the growth 
+    factor by blending both designs:
     \begin{equation}
-        g(k,v) = \min\left(g_{\max}, \max\left(g_{\min}, 1 + \frac{c_0 + \lambda \ln(1+v)}{k}\right)\right)
+        g(k,v,C_{\text{old}}) = 1 + w_A \left( \frac{\alpha_0 + \lambda \ln(1+v)}{\ln(C_{\text{old}} + \beta)} \right) + (1 - w_A) \left( \frac{c_0 + \lambda \ln(1+v)}{k} \right)
     \end{equation}
     This final model is further optimized using Bayesian Optimization (GP-Optimized 
-    Hybrid Framework) to fine-tune its hyper-parameters ($c_0, \lambda$) against 
+    Hybrid Framework) to fine-tune its hyper-parameters ($w_A, \lambda$) against 
     a unified objective score $J$ that penalizes both memory waste and computational 
     overhead (element copies).
 \end{itemize}
@@ -246,7 +246,7 @@ systematically explores and develops three progressive architectural frameworks:
 
 \subsection{Main Objective}
 The principal objective of this study is to design, implement, and evaluate a 
-workload-aware dynamic array growth algorithm that optimally balances memory 
+workload-aware dynamic array growth algorithm that efficiently balances memory 
 efficiency and computational throughput by dynamically adapting its growth 
 factor in response to runtime insertion patterns.
 

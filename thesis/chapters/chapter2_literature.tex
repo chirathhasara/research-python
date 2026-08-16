@@ -98,10 +98,10 @@ underlying memory pages, suggesting that resizing algorithms should be aware of
 allocator-level metrics. However, Sartor's models remained static and did not 
 adapt to runtime ingestion velocity.
 
-Bille et al. \cite{resizable_optimal_time_space} extended the theoretical bounds 
-of resizable arrays to parallel and concurrent environments. They proposed 
-algorithms that achieve optimal space-time trade-offs under dynamic updates 
-by amortizing the copying overhead across multiple threads. Similarly, research 
+Bille et al. \cite{resizable_optimal_time_space} optimized the bounds of resizable 
+arrays using tiered vectors. They proposed algorithms that support constant-time 
+random access while performing insertions and deletions in sub-linear time, 
+significantly reducing memory copying overhead for dynamic sequences. Similarly, research 
 into extendible arrays \cite{allocating_storage, managing_storage} in database 
 systems focused on managing secondary storage allocations. These works utilized 
 index structures to coordinate multidimensional array growth, ensuring that 
@@ -165,7 +165,7 @@ adaptability. The existing work is sharply divided into two paradigms:
     CPU overhead for index calculations.
 \end{enumerate}
 
-Specifically, no existing contiguous dynamic array resizing algorithm incorporates:
+Specifically, standard contiguous dynamic array resizing algorithms typically do not incorporate:
 \begin{itemize}
     \item \textbf{Workload-Aware Insertion Velocity ($v$):} Current systems 
     do not observe how fast elements are being appended. A fast, high-velocity 
@@ -181,7 +181,7 @@ Specifically, no existing contiguous dynamic array resizing algorithm incorporat
     harmonically to prevent massive absolute memory waste at scale.
     \item \textbf{Multi-Objective Parameter Optimization:} The parameters 
     of existing growth algorithms are chosen using heuristic rules-of-thumb 
-    (e.g., doubling because it is simple). There has been no systematic attempt 
+    (e.g., doubling because it is simple). Limited research has systematically attempted 
     to define a unified objective function $J$ that penalizes memory waste, 
     element copying, and runtime execution time, and to optimize this function 
     using modern hyper-parameter tuning techniques like Bayesian Optimization.
