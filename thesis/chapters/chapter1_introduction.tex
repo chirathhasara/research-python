@@ -161,7 +161,7 @@ This static, one-size-fits-all approach to resizing has remained largely
 unchanged for decades, despite the growing complexity and diversity of data 
 ingestion patterns in modern applications.
 
-\section{Problem Statement / Hypothesis}
+\section{Problem Statement}
 Despite the widespread reliance on dynamic arrays, their conventional 
 implementations utilize static, workload-independent resizing policies that 
 fail to adapt to runtime data insertion patterns. Whether an application is 
@@ -187,14 +187,7 @@ This lack of runtime adaptability gives rise to three main problem areas:
     reallocations. 
 \end{enumerate}
 
-\textbf{Research Hypothesis:} \\
-\textit{By utilizing runtime feedback—specifically the resize history counter 
-$k$ and the instantaneous insertion velocity $v$—a dynamic array growth algorithm 
-can achieve a significantly better trade-off between memory waste and element-copying 
-overhead than standard static policies. Specifically, the growth factor can be 
-scaled down as the array matures (increasing $k$) to prevent massive memory waste, 
-while scaling up during high-velocity bursts (increasing $v$) to minimize the 
-frequency of costly reallocations.}
+
 
 \section{Proposed Model}
 To overcome the limitations of static growth factors, this study proposes a 

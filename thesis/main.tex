@@ -26,25 +26,32 @@
 \usepackage{color}
 \usepackage{tabularx}
 \usepackage{titlesec}
+\usepackage[titles]{tocloft}
+\renewcommand{\cftdotsep}{0.5} % Tighten dots (virtually no gap) in TOC/LOF/LOT
 
 % Define custom column types for tabularx
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
 \newcolumntype{C}{>{\centering\arraybackslash}X}
 
-% Format chapter titles to be large and centered (not excessively huge)
+% Capitalize Generated Preliminary Headings
+\renewcommand{\contentsname}{CONTENTS}
+\renewcommand{\listfigurename}{LIST OF FIGURES}
+\renewcommand{\listtablename}{LIST OF TABLES}
+
+% Format chapter titles to be 16pt and centered
 \titleformat{\chapter}[display]
-  {\normalfont\large\bfseries\centering}
+  {\normalfont\fontsize{16}{20}\selectfont\bfseries\centering}
   {\MakeUppercase{\chaptertitlename}\ \thechapter}
   {0.5ex}
-  {\large}
+  {\fontsize{16}{20}\selectfont\centering}
 \titlespacing*{\chapter}{0pt}{-20pt}{20pt}
 
-% Format numberless chapters (preliminary pages, references, appendices)
+% Format numberless chapters (preliminary pages, references, appendices) to be 16pt and left-aligned
 \titleformat{name=\chapter,numberless}[block]
-  {\normalfont\large\bfseries\centering}
+  {\normalfont\fontsize{16}{20}\selectfont\bfseries}
   {}
   {0pt}
-  {\large}
+  {\fontsize{16}{20}\selectfont}
 \titlespacing*{name=\chapter,numberless}{0pt}{-20pt}{20pt}
 
 % Format section titles (consistent size)
@@ -109,6 +116,9 @@
     urlcolor=blue
 }
 
+% --- Rename Bibliography to REFERENCES ---
+\renewcommand{\bibname}{REFERENCES}
+
 \begin{document}
 
 % ==========================================
@@ -161,8 +171,7 @@
 
 \newpage
 \addcontentsline{toc}{chapter}{REFERENCES}
-\bibliographystyle{plain}
-\bibliography{references}
+\input{chapters/references}
 
 \include{appendices/appendices}
 
