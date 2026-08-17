@@ -88,7 +88,7 @@ of indirection. Every lookup requires resolving a pointer through the directory,
 which bypasses the hardware prefetcher and causes L1/L2 cache misses, making the 
 raw lookup speed significantly slower than a standard contiguous array.
 
-Sartor \cite{memory_allocation} analyzed the memory allocation behaviors of 
+Sartor \cite{z_rays} analyzed the memory allocation behaviors of 
 dynamic arrays in virtual memory systems. Sartor highlighted that the virtual memory 
 allocator's page size (typically 4KB) plays a crucial role in actual memory waste. 
 If a dynamic array requests an allocation that does not align with page boundaries, 

@@ -217,7 +217,7 @@ To compare different configurations, we developed a multi-objective cost functio
 \begin{equation}
     J = w_{\text{waste}} \cdot \overline{W} + w_{\text{copies}} \cdot \overline{C_{\text{copy}}} + w_{\text{time}} \cdot \overline{T}
 \end{equation}
-Specifically, the weights are set to prioritize memory efficiency and copying overhead equally (40\% each) as they represent the core space-time trade-off, with execution time serving as a secondary constraint (20\%) to ensure that the computational complexity of the resizing formula itself does not degrade throughput:
+Specifically, the weights are set to treat simulated memory waste and element-copying overhead as the two primary objectives, receiving equal weights (40\% each) as they represent the core space-time trade-off. Execution time receives a lower weight (20\%) because the Python-based simulation environment is subject to host system load and virtual machine overheads, which can introduce noise and influence measured execution times:
 \begin{equation}
     J = 0.4 \cdot \overline{W} + 0.4 \cdot \overline{C_{\text{copy}}} + 0.2 \cdot \overline{T}
 \end{equation}
@@ -350,7 +350,7 @@ Each configuration was executed across 10 independent trials for all 7 workloads
 generating a total of 15,400 benchmark runs.
 
 \subsection{Gaussian Process Bayesian Optimization Setup}
-To locate the global Pareto-optimal parameters for Formula D, we utilized 
+To locate the parameters that minimize the J-score for Formula D, we utilized 
 Bayesian Optimization using Gaussian Process regression as the surrogate model. 
 Bayesian Optimization is suited for optimizing expensive, black-box functions 
 by building a probabilistic model of the objective function and using an 
@@ -400,9 +400,9 @@ kernel function, which is defined as:
 \end{equation}
 where $d = ||x - x'||$ represents the Euclidean distance in hyper-parameter space, 
 $\sigma^2$ is the output variance scaling factor, and $\ell$ is the characteristic 
-length-scale parameter. The optimization loop was run for $50$ iterations: the first 
-$10$ iterations used random initialization to map the surrogate space, followed by 
-$40$ sequential guide iterations.
+length-scale parameter. The optimization loop was run for $35$ evaluations: the first 
+$10$ evaluations used random initialization to map the surrogate space, followed by 
+$25$ sequential guide evaluations.
 
 \section{Summary for the Chapter}
 This chapter detailed the methodology used to model, implement, and evaluate 
