@@ -42,7 +42,7 @@ Although constant geometric growth factors are simple to implement, they present
 
 This paper addresses these limitations by introducing a workload-aware, adaptive dynamic array growth algorithm. The proposed framework transitions from static growth factors to dynamic function $g(k, v, C_{\text{old}})$, which continuously adjusts growth based on the array's resize history ($k$), current capacity ($C_{\text{old}}$), and real-time insertion velocity ($v$).
 
-The contributions of this work are listed below:
+The contributions of this study are as follows:
 \begin{enumerate}
     \item A workload-aware dynamic-array growth rule that incorporates capacity ($C_{\text{old}}$), resize history ($k$), and insertion velocity ($v$);
     \item A Bayesian-optimization procedure for calibrating adaptive growth parameters under a joint memory and resizing cost objective; and
@@ -68,7 +68,7 @@ The proposed framework departs from static growth policies by computing growth f
 
 We formulate a hybrid growth function blending capacity-dependent logarithmic decay and iteration-dependent harmonic decay, both modulated by a velocity sensitivity coefficient $\lambda > 0$:
 \begin{equation}
-    \scalebox{0.88}{$g(k,v,C_{\text{old}}) = 1 + w_A \!\left( \frac{\alpha_0 + \lambda \ln(1+v)}{\ln(C_{\text{old}} + \beta)} \right) + (1-w_A) \!\left( \frac{c_0 + \lambda \ln(1+v)}{k} \right),$}
+    \scalebox{0.88}{$g(k,v,C_{\text{old}}) = 1 + w_A \!\left( \frac{\alpha_0 + \lambda \ln(1+v)}{\ln(C_{\text{old}} + \beta)} \right) + (1-w_A) \!\left( \frac{c_0 + \lambda \ln(1+v)}{k} \right)$}
     \label{eq:hybrid}
 \end{equation}
 where $\alpha_0 = 3.5$, $\beta = 10$, and $c_0 = 2.0$ are structural constants, and $w_A \in [0,1]$ is the logarithmic blend weight.
@@ -77,7 +77,7 @@ Logarithmic scaling was selected to reduce growth gradually with capacity rather
 
 To maintain numerical stability and avoid degenerate growth, effective growth factor is strictly clamped:
 \begin{equation}
-    g_{\text{eff}} = \min\!\left(g_{\max},\, \max\!\left(g_{\min},\, g(k,v,C_{\text{old}})\right)\right),
+    g_{\text{eff}} = \min\!\left(g_{\max},\, \max\!\left(g_{\min},\, g(k,v,C_{\text{old}})\right)\right)
     \label{eq:clamped}
 \end{equation}
 with lower guard rail $g_{\min} = 1.1$ and upper guard rail $g_{\max} = 2.0$. Based on preliminary experimentation, $g_{\min} = 1.1$ was adopted to prevent excessively small capacity increments that induce allocator fragmentation. The expanded capacity is computed as $C_{\text{new}} = \lfloor g_{\text{eff}} \cdot C_{\text{old}} \rfloor$.
@@ -85,11 +85,11 @@ with lower guard rail $g_{\min} = 1.1$ and upper guard rail $g_{\max} = 2.0$. Ba
 \subsection{Runtime Workload Signal}
 The insertion velocity $v$ measures real-time data ingestion rate:
 \begin{equation}
-    v = \frac{\Delta N}{\Delta t + \epsilon},
+    v = \frac{\Delta N}{\Delta t + \epsilon}
 \end{equation}
 where $\Delta N = C_{\text{old}} - C_{\text{prev}}$ represents elements appended since the previous resize, $\Delta t$ is elapsed wall-clock time in seconds, and $\epsilon = 10^{-9}$ prevents division by zero. High velocity $v$ indicates a burst phase demanding larger expansion, while low velocity $v$ indicates slow or terminating insertion where conservative growth minimizes unused capacity.
 
-Figure~\ref{fig:flowchart} illustrates the execution workflow of the adaptive append algorithm.
+Fig.~\ref{fig:flowchart} illustrates the execution workflow of the adaptive append algorithm.
 
 \begin{figure}[htbp]
 \centering
@@ -128,7 +128,7 @@ Figure~\ref{fig:flowchart} illustrates the execution workflow of the adaptive ap
 \subsection{Parameter Optimization}
 The hyperparameters $w_A$ and $\lambda$ are optimized using GP-BO over continuous domain $\mathcal{S} = [0.0, 1.0] \times [0.0, 10.0]$. We defined a composite relative cost metric $J$:
 \begin{equation}
-    J = w_W \cdot W_{\text{norm}} + w_C \cdot C_{\text{norm}} + w_T \cdot T_{\text{norm}},
+    J = w_W \cdot W_{\text{norm}} + w_C \cdot C_{\text{norm}} + w_T \cdot T_{\text{norm}}
     \label{eq:J}
 \end{equation}
 where $w_W = 0.4$, $w_C = 0.4$, and $w_T = 0.2$ balance memory waste, cumulative element copies, and execution runtime. Here, $W_{\text{norm}} = W / W_{\text{base}}$, $C_{\text{norm}} = C / C_{\text{base}}$, and $T_{\text{norm}} = T / T_{\text{base}}$ are relative costs normalized against the standard fixed doubling baseline ($W_{\text{base}} = 4.63\%$, $C_{\text{base}} = 10.49\text{M}$, $T_{\text{base}} = 1.40\text{ s}$). By construction, the baseline Fixed $2.0\times$ policy yields $J = 1.0000$, with values $J < 1.0000$ indicating superior overall efficiency.
@@ -138,7 +138,7 @@ Structural constants ($\alpha_0 = 3.5$, $\beta = 10$, $c_0 = 2.0$) were fixed \t
 \subsection{Complexity Analysis}
 Since $g_{\text{eff}}$ is bounded below by a constant strictly greater than unity ($g_{\min} = 1.1 > 1$), capacity increases geometrically in worst permitted case. The cumulative copying cost across $k$ reallocations remains bounded by a convergent geometric progression:
 \begin{equation}
-    \sum_{i=1}^{k} C_i \le \sum_{i=1}^{k} \frac{N}{g_{\min}^{k-i}} \le \frac{g_{\min}}{g_{\min} - 1} N = 11N,
+    \sum_{i=1}^{k} C_i \le \sum_{i=1}^{k} \frac{N}{g_{\min}^{k-i}} \le \frac{g_{\min}}{g_{\min} - 1} N = 11N
 \end{equation}
 preserving $O(1)$ amortized append complexity per element.
 
@@ -213,20 +213,18 @@ The proposed strategy achieved a favorable trade-off between memory waste and re
 Under the evaluated mixed workload and proposed objective, CPython growth policy incurred substantially more resize events (102) and copied elements (83.84M). Fixed $1.5\times$ accumulated high spatial waste (27.77\%) with 35 resizes and 27.69M copies ($J=3.6836$). The proposed model achieved the lowest relative cost score ($J=0.6363$, representing a 36.4\% relative reduction compared to the baseline $J=1.0000$). Across all seven evaluated patterns at $10^7$ scale, the proposed strategy achieved a mean memory waste of 0.81\% (compared to 6.24\% for Fixed $2.0\times$ and 24.12\% for Fixed $1.5\times$), while maintaining an average of 21.4 resizes across workloads.
 
 \subsection{Workload Sensitivity}
-Figure~\ref{fig:memory_waste} plots memory waste across all seven workload patterns at $10^7$ insertions.
+Fig.~\ref{fig:memory_waste} plots memory waste across all seven workload patterns at $10^7$ insertions. The per-pattern results reveal key behavioral differences across ingestion dynamics. Under decreasing and periodic patterns, the proposed model converges toward $g_{\min} = 1.1$ as velocity drops, driving memory waste below 1\%, whereas under uniform ingestion at $10^7$ scale, it records 4.63\% waste due to capacity boundary step alignment. Under burst and increasing patterns, velocity spikes elevate $g_{\text{eff}}$ toward $g_{\max} = 2.0$, absorbing bursts in single reallocations.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.95\linewidth]{fd_combined_patterns_line.png}}
 \caption{Memory waste (\%) across seven workload patterns at $10^7$ insertions.}
 \label{fig:memory_waste}
-\end{figure}
-
-The per-pattern results reveal key behavioral differences across ingestion dynamics. Under decreasing and periodic patterns, the proposed model converges toward $g_{\min} = 1.1$ as velocity drops, driving memory waste below 1\%, whereas under uniform ingestion at $10^7$ scale, it records 4.63\% waste due to capacity boundary step alignment. Under burst and increasing patterns, velocity spikes elevate $g_{\text{eff}}$ toward $g_{\max} = 2.0$, absorbing bursts in single reallocations. 
+\end{figure} 
 
 To isolate contribution of workload awareness, we compared the optimized model against an unmodulated baseline with $\lambda = 0$. Without velocity sensitivity ($\lambda = 0$), array cannot respond to sudden traffic surges, incurring additional reallocations during rapid ingestion. Calibrating $\lambda = 3.0944$ enables instantaneous responsiveness, dynamically expanding capacity during bursts while returning to conservative growth during steady phases.
 
 \subsection{Scaling Behavior}
-Figure~\ref{fig:size_scaling} shows memory waste scaling across workload sizes from $10^4$ to $10^7$ elements.
+Fig.~\ref{fig:size_scaling} shows memory waste scaling across workload sizes from $10^4$ to $10^7$ elements.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.95\linewidth]{fd_combined_workload_size_line.png}}
@@ -239,7 +237,7 @@ Scaling analysis indicates that memory waste exhibits non-monotonic fluctuation 
 \section{Conclusion and Future Work}
 This paper presents a workload-aware growth strategy for contiguous dynamic arrays that adjusts capacity expansion dynamically based on current capacity, resize iteration history, and real-time insertion velocity. By parameterizing a hybrid logarithmic--harmonic growth function using Gaussian-process Bayesian optimization, the proposed approach adapts to fluctuating ingestion rates while maintaining amortized $O(1)$ append complexity. Empirical evaluation across diverse workload patterns and scales demonstrates that adapting capacity growth directly to observed insertion intensity substantially restricts unused memory space without sacrificing reallocation performance or increasing element-copying overhead.
 
-Future research will focus on: (i) integrating the adaptive growth mechanism directly into native container runtimes such as CPython (\texttt{listobject.c}) and C++ STL \texttt{std::vector}; (ii) developing online Bayesian parameter updating to dynamically recalibrate optimization weights during application execution; and (iii) extending the workload-aware growth model to multidimensional dynamic arrays and lock-free concurrent sequences.
+Future research will explore integrating the adaptive growth mechanism directly into native container runtimes, such as CPython (\texttt{listobject.c}) and C++ STL \texttt{std::vector}. Additionally, developing online Bayesian parameter updating will enable dynamic recalibration of optimization weights during live application execution. Finally, extending the workload-aware growth model to multidimensional dynamic arrays and lock-free concurrent sequences remains an important direction for future investigation.
 
 \begin{thebibliography}{21}
 \bibitem{cormen_algorithms}
