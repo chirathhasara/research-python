@@ -24,7 +24,7 @@ for fast \mbox{random} access and dynamic memory allocation. Conventional
 implementations resize arrays using fixed growth factors (e.g., $1.5\times$
 or $2\times$), compromising between memory utilization and \mbox{resizing} \mbox{overhead}
 \cite{brodnik}. Though recent studies explore alternative array organizations
-to \mbox{improve} \mbox{memory} \mbox{efficiency} \cite{sartor,bille}, the utilized resizing
+to \mbox{improve} \mbox{memory} \mbox{efficiency} \cite{sartor,hoogerwoord}, the utilized resizing
 strategies remain workload-independent, with \mbox{limited} \mbox{flexibility} in adaptation
 to changes in insertion patterns. This study proposes an \mbox{adaptive} growth
 strategy combining resize history with runtime workload intensity.
@@ -58,7 +58,8 @@ policies.
 
 \section*{Results and Conclusions}
 
-This study aimed to identify an optimal configuration that minimized memory waste while maintaining high throughput and limiting element-copying overhead. Figure \ref{fig:memory_waste} shows the memory waste comparison across the evaluated resizing strategies. Under a $10^7$
+Selection of the optimal configuration targeted minimizing memory waste while
+maintaining high throughput parity and bounded element copying. Figure \ref{fig:memory_waste} shows the memory waste comparison across the evaluated resizing strategies. Under a $10^7$
 element mixed workload (10 trials), the proposed strategy achieved 1.28\% memory waste, 32 resizes,
 38.76M copied elements, and 6.40M ops/s throughput. Comparatively, Fixed
 2.0$\times$ yielded 4.63\% waste (20 resizes, 10.49M copies), Fixed 1.5$\times$
@@ -92,8 +93,8 @@ A. Brodnik, S. Carlsson, E. D. Demaine, J. I. Munro, and R. Sedgewick. \textit{R
 \bibitem{sartor}
 J. B. Sartor, S. M. Blackburn, D. Frampton, M. Hirzel, and K. S. McKinley. Z-rays: divide arrays and conquer speed and flexibility. \textit{Proceedings of the 31st ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI)}, 471--482, 2010.
 
-\bibitem{bille}
-P. Bille, A. R. Christiansen, M. B. Ettienne, and I. L. Gørtz. Fast dynamic arrays. \textit{Proceedings of the 26th Annual European Symposium on Algorithms (ESA)}, 10:1--10:13, 2018.
+\bibitem{hoogerwoord}
+R. R. Hoogerwoord. A logarithmic implementation of flexible arrays. \textit{Mathematics of Program Construction}, LNCS 669:191--207, Springer, 1993.
 
 \end{enumerate}
 
